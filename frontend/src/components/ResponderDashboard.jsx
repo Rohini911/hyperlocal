@@ -3,11 +3,90 @@ import {
   Shield, Check, X, Navigation, MapPin, AlertTriangle, 
   Clock, HeartPulse, Flame, Activity, CheckCircle2,
   RefreshCw, Power, FastForward, Phone, AlertOctagon, LogOut,
-  Volume2, VolumeX, Radio, Play, Pause, Compass
+  Volume2, VolumeX, Radio, Play, Pause, Compass, Eye,
+  Mic, User, FileText, ExternalLink, HelpCircle
 } from "lucide-react";
 import MapComponent from "./MapComponent";
 import { incidentApi, responderApi, routingApi, socket, deduplicateIncidents, getDeviceLocation } from "../services/api";
 import { sounds } from "../services/soundEffects";
+
+// Check if an incident belongs to this responder's emergency service wing
+export const isIncidentMatchingService = (incident, responderServiceType) => {
+  if (!incident) return false;
+  if (!responderServiceType) return true;
+  
+  const sType = (responderServiceType || "").trim().toLowerCase();
+  const sug = (incident.suggested_service || "").trim().toLowerCase();
+  const eType = (incident.emergency_type || "").trim().toLowerCase();
+
+  // 1. Universal / SOS / All-Service broadcasts go to all units
+  if (sug === "all" || sug === "emergency services" || sug === "general" || eType === "sos" || eType.includes("general")) {
+    return true;
+  }
+
+  // 2. Police / Law Enforcement track
+  if (sType.includes("police") || sType.includes("law") || sType.includes("security")) {
+    return (
+      sug.includes("police") ||
+      eType.includes("police") ||
+      eType.includes("crime") ||
+      eType.includes("violence") ||
+      eType.includes("theft") ||
+      eType.includes("assault") ||
+      eType.includes("robbery") ||
+      eType.includes("dispute")
+    );
+  }
+
+  // 3. Fire Department / Hazard track
+  if (sType.includes("fire")) {
+    return (
+      sug.includes("fire") ||
+      eType.includes("fire") ||
+      eType.includes("smoke") ||
+      eType.includes("gas leak") ||
+      eType.includes("burn") ||
+      eType.includes("explosion") ||
+      eType.includes("chemical") ||
+      eType.includes("hazard")
+    );
+  }
+
+  // 4. Ambulance / Medical / EMS track
+  if (sType.includes("ambulance") || sType.includes("medical") || sType.includes("hospital") || sType.includes("paramedic") || sType.includes("ems")) {
+    return (
+      sug.includes("ambulance") ||
+      sug.includes("medical") ||
+      sug.includes("ems") ||
+      eType.includes("medical") ||
+      eType.includes("accident") ||
+      eType.includes("crash") ||
+      eType.includes("cardiac") ||
+      eType.includes("heart") ||
+      eType.includes("injury") ||
+      eType.includes("unconscious") ||
+      eType.includes("bleeding") ||
+      eType.includes("trauma")
+    );
+  }
+
+  // 5. Rescue / Disaster Management track
+  if (sType.includes("rescue") || sType.includes("disaster") || sType.includes("ndrf")) {
+    return (
+      sug.includes("rescue") ||
+      sug.includes("disaster") ||
+      eType.includes("rescue") ||
+      eType.includes("flood") ||
+      eType.includes("earthquake") ||
+      eType.includes("collapse") ||
+      eType.includes("trapped") ||
+      eType.includes("storm")
+    );
+  }
+
+  // Fallback substring matching
+  return sug.includes(sType) || eType.includes(sType);
+};
 
 export default function ResponderDashboard({ currentUser, onLogout }) {
   const [incidents, setIncidents] = useState([]);
@@ -15,6 +94,9 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
   const [routeCoords, setRouteCoords] = useState([]);
   const [routeStats, setRouteStats] = useState({ distanceKm: 0, durationMinutes: 0 });
   const [isAvailable, setIsAvailable] = useState(true);
+
+  // Modal for Viewing Full Citizen & Incident Details
+  const [selectedDetailIncident, setSelectedDetailIncident] = useState(null);
 
   // Auto-detected Responder GPS location (synchronized across all tabs)
   const [responderCoords, setResponderCoords] = useState(() => {
@@ -43,17 +125,24 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     }
     socket.emit("join_dispatch");
 
-    // 1. Direct 5-Minute Escalation incoming job alert
+    // 1. Direct 5-Minute Escalation incoming job alert (Filtered strictly by service belonging)
     socket.on("incoming_job_alert", (data) => {
+      const inc = data.incident || data;
+      if (!isIncidentMatchingService(inc, serviceType)) {
+        return; // Ignore alerts belonging exclusively to a different service
+      }
       sounds.playAlertSiren();
       sounds.showSystemNotification("🚨 Incoming Emergency Dispatch!", `Incident ${data.incidentId} matches your ${serviceType} unit.`);
       setIncomingAlert(data);
       setCountdown(data.timeoutSeconds || 300);
     });
 
-    // 2. Real-time Emergency SOS broadcast from any citizen (Received by Police, Ambulance, Fire, Rescue)
+    // 2. Real-time Emergency SOS broadcast from citizen (Filtered strictly by service belonging)
     socket.on("incident_created", (newInc) => {
       loadIncidents();
+      if (!isIncidentMatchingService(newInc, serviceType)) {
+        return; // Do not interrupt with alerts for a different emergency track
+      }
       sounds.playAlertSiren();
       sounds.showSystemNotification(
         "🚨 New Emergency SOS Reported!",
@@ -185,6 +274,9 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     try {
       const res = await incidentApi.assign(incidentId, "accept", currentLat, currentLng);
       setIncomingAlert(null);
+      if (selectedDetailIncident && selectedDetailIncident.id === incidentId) {
+        setSelectedDetailIncident(null);
+      }
       const inc = res.incident || incidents.find(i => i.id === incidentId);
       if (inc) {
         if (inc.assigned_responder) {
@@ -295,12 +387,16 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     setIsSimulatingMovement(false);
   };
 
+  // Filter unassigned reports strictly matching this responder's service
   const unassignedMatchingPool = incidents.filter(i => 
-    (i.status === "Reported" || i.status === "Awaiting Responder")
+    (i.status === "Reported" || i.status === "Awaiting Responder") &&
+    isIncidentMatchingService(i, serviceType)
   );
 
+  // Completed missions belonging to this unit / service
   const completedIncidents = incidents.filter(i => 
-    i.status === "Resolved"
+    i.status === "Resolved" &&
+    (i.assigned_responder_id === currentUser?.responderId || isIncidentMatchingService(i, serviceType))
   );
 
   return (
@@ -310,7 +406,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
       {incomingAlert && (
         <div className="modal-overlay">
           <div className="modal-container" style={{
-            maxWidth: "490px",
+            maxWidth: "520px",
             padding: "26px",
             textAlign: "center",
             border: "2px solid #ff334b",
@@ -326,35 +422,321 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
               {Math.floor(countdown / 60).toString().padStart(2, '0')}:{(countdown % 60).toString().padStart(2, '0')}
             </div>
             <div style={{ fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "14px", fontWeight: "700" }}>
-              🚨 Real-Time Dispatch Alert • 5-Minute Acceptance Timer
+              🚨 Real-Time Dispatch Alert • Matching {serviceType} Wing
             </div>
 
             <h3 style={{ fontSize: "1.25rem", fontWeight: "900", color: "#f8fafc", marginBottom: "6px" }}>
               {incomingAlert.emergency_type || "Emergency"} Incident Reported!
             </h3>
             
-            <div style={{ background: "rgba(255,255,255,0.05)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.1)", marginBottom: "18px", textAlign: "left", fontSize: "0.82rem", color: "#cbd5e1" }}>
-              <div><strong>Ticket ID:</strong> {incomingAlert.incidentId}</div>
+            <div style={{ background: "rgba(255,255,255,0.05)", padding: "14px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.1)", marginBottom: "18px", textAlign: "left", fontSize: "0.84rem", color: "#cbd5e1" }}>
+              <div><strong>Ticket ID:</strong> <span style={{ color: "#00e5ff" }}>{incomingAlert.incidentId}</span></div>
+              {incomingAlert.incident?.citizen_name && (
+                <div style={{ marginTop: "4px" }}><strong>Citizen:</strong> {incomingAlert.incident.citizen_name} ({incomingAlert.incident.citizen_phone || "Phone provided"})</div>
+              )}
               {incomingAlert.description && <div style={{ marginTop: "4px" }}><strong>Details:</strong> {incomingAlert.description}</div>}
               {incomingAlert.address && <div style={{ marginTop: "4px" }}><strong>Location:</strong> {incomingAlert.address}</div>}
             </div>
 
-            <div style={{ display: "flex", gap: "10px" }}>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <button
                 onClick={() => handleAccept(incomingAlert.incidentId)}
                 className="btn-emergency-main"
-                style={{ flex: 1, padding: "12px", fontSize: "0.95rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}
+                style={{ flex: 1, padding: "12px", fontSize: "0.92rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", minWidth: "150px" }}
               >
                 <Check size={18} /> Accept Emergency
               </button>
+              
+              <button
+                onClick={() => {
+                  const targetInc = incomingAlert.incident || incidents.find(i => i.id === incomingAlert.incidentId) || incomingAlert;
+                  setSelectedDetailIncident(targetInc);
+                }}
+                className="btn-outline"
+                style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: "6px", color: "#00e5ff", borderColor: "#00e5ff" }}
+              >
+                <Eye size={16} /> View Details
+              </button>
+
               <button
                 onClick={() => handleDecline(incomingAlert.incidentId)}
                 className="btn-outline"
-                style={{ padding: "12px 18px" }}
+                style={{ padding: "12px 14px" }}
               >
                 Decline
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* FULL CITIZEN & INCIDENT DETAILS MODAL (MASTER INSPECTION DRAWER) */}
+      {selectedDetailIncident && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }}>
+          <div className="modal-container" style={{
+            maxWidth: "640px",
+            width: "92vw",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            padding: "24px",
+            background: "#0d1322",
+            border: "1.5px solid rgba(0, 229, 255, 0.4)",
+            borderRadius: "18px",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.8)"
+          }}>
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "12px" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span className="neon-badge neon-badge-critical" style={{ fontSize: "0.75rem" }}>
+                    {selectedDetailIncident.emergency_type || "Emergency"}
+                  </span>
+                  <span className="neon-badge neon-badge-enroute" style={{ fontSize: "0.75rem" }}>
+                    {selectedDetailIncident.status || "Reported"}
+                  </span>
+                  <span className="neon-badge" style={{ fontSize: "0.75rem", background: "rgba(255, 184, 0, 0.2)", color: "#ffb800", borderColor: "#ffb800" }}>
+                    {selectedDetailIncident.severity || "Critical"} Priority
+                  </span>
+                </div>
+                <h2 style={{ fontSize: "1.3rem", fontWeight: "900", color: "#f8fafc", marginTop: "8px" }}>
+                  Incident Dossier: {selectedDetailIncident.id}
+                </h2>
+                <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                  Service Wing: <strong style={{ color: "#00e5ff" }}>{selectedDetailIncident.suggested_service || serviceType}</strong> • Track: {serviceType}
+                </div>
+              </div>
+              <button
+                onClick={() => { sounds.playTap(); setSelectedDetailIncident(null); }}
+                style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#f8fafc", borderRadius: "50%", width: "32px", height: "32px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Citizen Information Card with Direct Phone Dial */}
+            <div style={{
+              background: "rgba(0, 229, 255, 0.06)",
+              border: "1px solid rgba(0, 229, 255, 0.25)",
+              borderRadius: "12px",
+              padding: "16px",
+              marginBottom: "16px"
+            }}>
+              <div style={{ fontSize: "0.78rem", textTransform: "uppercase", color: "#00e5ff", fontWeight: "800", letterSpacing: "0.05em", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <User size={15} /> Citizen Reporter Profile & Contact
+              </div>
+              
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+                <div>
+                  <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Citizen Full Name:</div>
+                  <div style={{ fontSize: "1rem", fontWeight: "900", color: "#f8fafc" }}>
+                    {selectedDetailIncident.citizen_name || "Emergency Citizen (Verified)"}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Contact Phone Number:</div>
+                  <div style={{ fontSize: "1rem", fontWeight: "900", color: "#00ff88", fontFamily: "monospace" }}>
+                    {selectedDetailIncident.citizen_phone || "+91 98765 43210"}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: "12px", display: "flex", gap: "8px" }}>
+                <a
+                  href={`tel:${selectedDetailIncident.citizen_phone || "+919876543210"}`}
+                  style={{
+                    flex: 1,
+                    background: "linear-gradient(135deg, #00ff88, #059669)",
+                    color: "#070a12",
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    fontWeight: "900",
+                    fontSize: "0.88rem",
+                    textAlign: "center",
+                    textDecoration: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px"
+                  }}
+                >
+                  <Phone size={16} /> Call Citizen Directly
+                </a>
+              </div>
+            </div>
+
+            {/* Reported Danger Checklist */}
+            <div style={{
+              background: "rgba(255, 255, 255, 0.04)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: "12px",
+              padding: "14px",
+              marginBottom: "16px"
+            }}>
+              <div style={{ fontSize: "0.78rem", textTransform: "uppercase", color: "#ffb800", fontWeight: "800", letterSpacing: "0.05em", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <AlertTriangle size={15} /> Citizen Danger Checklist & Hazards Flagged
+              </div>
+
+              {selectedDetailIncident.checklist && selectedDetailIncident.checklist.length > 0 ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {selectedDetailIncident.checklist.map((item, idx) => (
+                    <span
+                      key={idx}
+                      style={{
+                        background: "rgba(255, 51, 75, 0.18)",
+                        border: "1px solid rgba(255, 51, 75, 0.4)",
+                        color: "#ff8090",
+                        padding: "4px 10px",
+                        borderRadius: "20px",
+                        fontSize: "0.76rem",
+                        fontWeight: "700",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px"
+                      }}
+                    >
+                      <AlertOctagon size={12} /> {item}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                  No high-hazard checklist items flagged by reporter. Standard safety protocols apply.
+                </div>
+              )}
+            </div>
+
+            {/* Voice Transcript (if available) */}
+            {selectedDetailIncident.voice_transcript && (
+              <div style={{
+                background: "rgba(168, 85, 247, 0.1)",
+                border: "1px solid rgba(168, 85, 247, 0.3)",
+                borderRadius: "12px",
+                padding: "14px",
+                marginBottom: "16px"
+              }}>
+                <div style={{ fontSize: "0.78rem", textTransform: "uppercase", color: "#c084fc", fontWeight: "800", letterSpacing: "0.05em", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <Mic size={15} /> Citizen Voice Input Recording Transcript
+                </div>
+                <div style={{ fontStyle: "italic", color: "#e2e8f0", fontSize: "0.88rem", background: "rgba(0,0,0,0.25)", padding: "10px", borderRadius: "8px" }}>
+                  "{selectedDetailIncident.voice_transcript}"
+                </div>
+              </div>
+            )}
+
+            {/* Description & Situation Note */}
+            {selectedDetailIncident.description && (
+              <div style={{
+                background: "rgba(255, 255, 255, 0.03)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                borderRadius: "12px",
+                padding: "14px",
+                marginBottom: "16px"
+              }}>
+                <div style={{ fontSize: "0.78rem", textTransform: "uppercase", color: "#94a3b8", fontWeight: "800", letterSpacing: "0.05em", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <FileText size={15} /> Incident Description & Situation Report
+                </div>
+                <div style={{ color: "#e2e8f0", fontSize: "0.85rem", lineHeight: "1.4" }}>
+                  {selectedDetailIncident.description}
+                </div>
+              </div>
+            )}
+
+            {/* Precise GPS & Address Location */}
+            <div style={{
+              background: "rgba(255, 255, 255, 0.03)",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              borderRadius: "12px",
+              padding: "14px",
+              marginBottom: "18px"
+            }}>
+              <div style={{ fontSize: "0.78rem", textTransform: "uppercase", color: "#00e5ff", fontWeight: "800", letterSpacing: "0.05em", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <MapPin size={15} /> Precise Geographical Coordinates & Address
+              </div>
+              <div style={{ color: "#f8fafc", fontSize: "0.85rem", fontWeight: "700", marginBottom: "4px" }}>
+                {selectedDetailIncident.address || "GPS Position Near Hyderabad Hub"}
+              </div>
+              <div style={{ fontSize: "0.78rem", color: "#94a3b8", fontFamily: "monospace", marginBottom: "10px" }}>
+                Latitude: {selectedDetailIncident.lat} • Longitude: {selectedDetailIncident.lng}
+              </div>
+
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${selectedDetailIncident.lat},${selectedDetailIncident.lng}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "0.8rem",
+                  color: "#00e5ff",
+                  textDecoration: "none",
+                  fontWeight: "800"
+                }}
+              >
+                <ExternalLink size={14} /> Open in Google Maps GPS Navigation →
+              </a>
+            </div>
+
+            {/* Direct Modal Actions */}
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+              {(selectedDetailIncident.status === "Reported" || selectedDetailIncident.status === "Awaiting Responder") && (
+                <button
+                  onClick={() => handleAccept(selectedDetailIncident.id)}
+                  className="btn-emergency-main"
+                  style={{ padding: "10px 18px", fontSize: "0.88rem", display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  <Check size={16} /> Accept Emergency Dispatch
+                </button>
+              )}
+
+              {activeIncident?.id === selectedDetailIncident.id && (
+                <>
+                  {activeIncident.status !== "En Route" && activeIncident.status !== "On Scene" && (
+                    <button
+                      onClick={() => { handleStatusChange("En Route"); setSelectedDetailIncident(null); }}
+                      className="btn-outline"
+                      style={{ padding: "10px 14px", fontSize: "0.82rem", borderColor: "#00e5ff", color: "#00e5ff" }}
+                    >
+                      Mark En Route
+                    </button>
+                  )}
+                  {activeIncident.status !== "On Scene" && (
+                    <button
+                      onClick={() => { handleStatusChange("On Scene"); setSelectedDetailIncident(null); }}
+                      className="btn-outline"
+                      style={{ padding: "10px 14px", fontSize: "0.82rem", borderColor: "#eab308", color: "#eab308" }}
+                    >
+                      Arrived On Scene
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { handleStatusChange("Resolved"); setSelectedDetailIncident(null); }}
+                    style={{
+                      background: "linear-gradient(135deg, #00ff88, #059669)",
+                      color: "#070a12",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "10px 16px",
+                      fontSize: "0.85rem",
+                      fontWeight: "900",
+                      cursor: "pointer"
+                    }}
+                  >
+                    Resolve Mission
+                  </button>
+                </>
+              )}
+
+              <button
+                onClick={() => { sounds.playTap(); setSelectedDetailIncident(null); }}
+                className="btn-outline"
+                style={{ padding: "10px 16px", fontSize: "0.85rem" }}
+              >
+                Close Dossier
+              </button>
+            </div>
+
           </div>
         </div>
       )}
@@ -381,7 +763,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
               {serviceType} Responder Unit
             </div>
             <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
-              {currentUser?.full_name || "Official Unit"} • Vehicle: {currentUser?.vehicle_number || "DEMO-UNIT"}
+              {currentUser?.full_name || "Official Unit"} • Service Wing: <strong style={{ color: "#00e5ff" }}>{serviceType} Track Only</strong>
             </div>
           </div>
         </div>
@@ -439,6 +821,41 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                 </span>
               </div>
 
+              {/* Citizen Quick Info Bar */}
+              <div style={{
+                background: "rgba(0, 229, 255, 0.08)",
+                border: "1px solid rgba(0, 229, 255, 0.2)",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center"
+              }}>
+                <div>
+                  <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Citizen Reporter:</div>
+                  <div style={{ fontSize: "0.92rem", fontWeight: "900", color: "#f8fafc" }}>
+                    {activeIncident.citizen_name || "Emergency Citizen"}
+                  </div>
+                </div>
+                <a
+                  href={`tel:${activeIncident.citizen_phone || "+919876543210"}`}
+                  style={{
+                    background: "#00ff88",
+                    color: "#070a12",
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    fontSize: "0.78rem",
+                    fontWeight: "900",
+                    textDecoration: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px"
+                  }}
+                >
+                  <Phone size={13} /> Call
+                </a>
+              </div>
+
               {activeIncident.description && (
                 <div style={{ background: "rgba(255,255,255,0.04)", padding: "10px 12px", borderRadius: "8px", fontSize: "0.82rem", color: "#e2e8f0" }}>
                   <strong>Description: </strong>{activeIncident.description}
@@ -451,6 +868,24 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                   <span>{activeIncident.address}</span>
                 </div>
               )}
+
+              {/* View Full Details Button */}
+              <button
+                onClick={() => { sounds.playTap(); setSelectedDetailIncident(activeIncident); }}
+                className="btn-outline"
+                style={{
+                  padding: "8px 12px",
+                  fontSize: "0.8rem",
+                  borderColor: "rgba(0, 229, 255, 0.5)",
+                  color: "#00e5ff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px"
+                }}
+              >
+                <Eye size={15} /> View Full Citizen & Incident Details
+              </button>
 
               {/* Status Stepper Actions */}
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", paddingTop: "6px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
@@ -546,15 +981,15 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
             }}>
               <CheckCircle2 size={36} color="#00ff88" style={{ margin: "0 auto 10px auto" }} />
               <h3 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#f8fafc" }}>
-                Unit On Standby
+                {serviceType} Unit On Standby
               </h3>
               <p style={{ fontSize: "0.78rem", color: "#94a3b8", maxWidth: "280px", margin: "4px auto 0 auto" }}>
-                Listening for emergency dispatches across all active units.
+                Listening for emergency dispatches targeted exclusively to the <strong>{serviceType}</strong> track.
               </p>
             </div>
           )}
 
-          {/* Incoming Dispatch Queue for This Service & Sector */}
+          {/* Incoming Dispatch Queue for This Specific Service Track */}
           {unassignedMatchingPool.length > 0 && (
             <div style={{
               background: "rgba(14, 20, 36, 0.95)",
@@ -569,10 +1004,10 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                 <div style={{ fontSize: "0.88rem", fontWeight: "800", color: "#ffb800", display: "flex", alignItems: "center", gap: "6px" }}>
                   <AlertTriangle size={16} /> Available Emergency Reports ({unassignedMatchingPool.length})
                 </div>
-                <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{serviceType} Track</span>
+                <span style={{ fontSize: "0.72rem", color: "#00e5ff", fontWeight: "700" }}>{serviceType} Track Only</span>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "240px", overflowY: "auto" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "280px", overflowY: "auto" }}>
                 {unassignedMatchingPool.map((inc) => (
                   <div key={inc.id} style={{
                     background: "rgba(30, 41, 59, 0.6)",
@@ -588,16 +1023,33 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                       <div style={{ fontWeight: "800", color: "#f8fafc", fontSize: "0.85rem" }}>
                         {inc.id} • {inc.emergency_type}
                       </div>
+                      {inc.citizen_name && (
+                        <div style={{ fontSize: "0.75rem", color: "#00e5ff", marginTop: "2px" }}>
+                          Reporter: {inc.citizen_name}
+                        </div>
+                      )}
                       {inc.description && <div style={{ fontSize: "0.75rem", color: "#cbd5e1", marginTop: "2px" }}>{inc.description}</div>}
                       <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: "2px" }}>{inc.address || "GPS Coordinates"}</div>
                     </div>
-                    <button
-                      onClick={() => handleAccept(inc.id)}
-                      className="btn-emergency-main"
-                      style={{ padding: "6px 14px", fontSize: "0.8rem", whiteSpace: "nowrap" }}
-                    >
-                      Accept Mission
-                    </button>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <button
+                        onClick={() => handleAccept(inc.id)}
+                        className="btn-emergency-main"
+                        style={{ padding: "6px 14px", fontSize: "0.8rem", whiteSpace: "nowrap" }}
+                      >
+                        Accept Mission
+                      </button>
+
+                      <button
+                        onClick={() => { sounds.playTap(); setSelectedDetailIncident(inc); }}
+                        className="btn-outline"
+                        style={{ padding: "4px 10px", fontSize: "0.72rem", color: "#00e5ff", borderColor: "rgba(0, 229, 255, 0.3)" }}
+                      >
+                        <Eye size={12} style={{ display: "inline", verticalAlign: "middle", marginRight: "3px" }} />
+                        View Details
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -619,7 +1071,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                 <CheckCircle2 size={16} /> Completed Missions ({completedIncidents.length})
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "180px", overflowY: "auto" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "200px", overflowY: "auto" }}>
                 {completedIncidents.map((inc) => (
                   <div key={inc.id} style={{
                     background: "rgba(15, 23, 42, 0.5)",
@@ -636,9 +1088,20 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                       </div>
                       <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>{inc.address || "GPS Location"}</div>
                     </div>
-                    <span className="neon-badge neon-badge-resolved" style={{ fontSize: "0.68rem" }}>
-                      Resolved
-                    </span>
+                    
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <button
+                        onClick={() => { sounds.playTap(); setSelectedDetailIncident(inc); }}
+                        className="btn-outline"
+                        style={{ padding: "3px 8px", fontSize: "0.7rem", color: "#00e5ff", borderColor: "rgba(0, 229, 255, 0.3)" }}
+                      >
+                        <Eye size={12} style={{ display: "inline", verticalAlign: "middle", marginRight: "2px" }} />
+                        Details
+                      </button>
+                      <span className="neon-badge neon-badge-resolved" style={{ fontSize: "0.68rem" }}>
+                        Resolved
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
