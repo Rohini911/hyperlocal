@@ -47,7 +47,15 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
         setActiveIncident(data);
         setViewMode("details");
         setIncidents((prev) => deduplicateIncidents([data, ...prev]));
-        if (data.assigned_responder) fetchRoute(data);
+        if (data.assigned_responder) {
+          setResponderLiveLoc({ lat: data.assigned_responder.lat, lng: data.assigned_responder.lng });
+          fetchRoute(data);
+        }
+        setAcceptanceToast({
+          title: "🚨 Emergency Dispatched!",
+          message: `Your ${data.emergency_type || "Emergency"} report is broadcasting to nearest emergency units.`,
+          service: data.suggested_service || "Emergency"
+        });
       }
     };
 
@@ -70,7 +78,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       if (inc && inc.id) {
         setActiveIncident(inc);
         setViewMode("details");
-        if (resp) {
+        if (resp && resp.lat && resp.lng) {
           setResponderLiveLoc({ lat: resp.lat, lng: resp.lng });
           fetchRoute(inc);
         }
@@ -86,6 +94,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       if (activeIncidentRef.current && inc?.id === activeIncidentRef.current.id) {
         setActiveIncident(inc);
         if (inc.assigned_responder) {
+          setResponderLiveLoc({ lat: inc.assigned_responder.lat, lng: inc.assigned_responder.lng });
           fetchRoute(inc);
         }
       }
@@ -96,6 +105,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       if (activeIncidentRef.current && data?.id === activeIncidentRef.current.id) {
         setActiveIncident(data);
         if (data.assigned_responder) {
+          setResponderLiveLoc({ lat: data.assigned_responder.lat, lng: data.assigned_responder.lng });
           fetchRoute(data);
         }
       }

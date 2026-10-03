@@ -149,21 +149,49 @@ function classifyEmergencyAndSeverity(emergencyType, description = '', checklist
 }
 
 // Find Ranked Responders based on Service and ETA
-async function findRankedResponders(serviceType, incidentLat, incidentLng, maxRadiusKm = 20.0) {
-  // Query available and verified responders of required service type
-  const responders = await dbAll(
-    `SELECT r.*, u.full_name, u.phone, u.email
-     FROM responders r
-     JOIN users u ON r.user_id = u.id
-     WHERE r.service_type = ? 
-       AND r.is_available = 1 
-       AND r.is_verified = 1`,
-    [serviceType]
-  );
+async function findRankedResponders(serviceType, incidentLat, incidentLng, maxRadiusKm = 50.0) {
+  // Query all available and verified responders
+  let responders = [];
+  try {
+    if (serviceType && serviceType !== 'All') {
+      // First try to find responders of the requested service
+      const matched = await dbAll(
+        `SELECT r.*, u.full_name, u.phone, u.email
+         FROM responders r
+         JOIN users u ON r.user_id = u.id
+         WHERE r.service_type = ? 
+           AND r.is_available = 1 
+           AND r.is_verified = 1`,
+        [serviceType]
+      );
+      
+      // Also get any other active units
+      const others = await dbAll(
+        `SELECT r.*, u.full_name, u.phone, u.email
+         FROM responders r
+         JOIN users u ON r.user_id = u.id
+         WHERE r.service_type != ? 
+           AND r.is_available = 1 
+           AND r.is_verified = 1`,
+        [serviceType]
+      );
+      responders = [...matched, ...others];
+    } else {
+      responders = await dbAll(
+        `SELECT r.*, u.full_name, u.phone, u.email
+         FROM responders r
+         JOIN users u ON r.user_id = u.id
+         WHERE r.is_available = 1 
+           AND r.is_verified = 1`
+      );
+    }
+  } catch (err) {
+    console.warn('Error querying responders:', err.message);
+  }
 
   const ranked = [];
   for (const resp of responders) {
-    const dist = calculateHaversineDistance(incidentLat, incidentLng, resp.lat, resp.lng);
+    const dist = calculateHaversineDistance(incidentLat, incidentLng, resp.lat || 17.5950, resp.lng || 78.4950);
     if (dist.km <= maxRadiusKm) {
       const eta = estimateTravelTime(dist.km);
       ranked.push({
@@ -171,13 +199,19 @@ async function findRankedResponders(serviceType, incidentLat, incidentLng, maxRa
         distance_km: dist.km,
         distance_meters: dist.meters,
         eta_minutes: eta.minutes,
-        eta_seconds: eta.seconds
+        eta_seconds: eta.seconds,
+        is_exact_service: resp.service_type === serviceType
       });
     }
   }
 
-  // Sort by ETA / distance ascending
-  ranked.sort((a, b) => a.distance_km - b.distance_km);
+  // Sort by exact service match first, then by ETA / distance ascending
+  ranked.sort((a, b) => {
+    if (a.is_exact_service && !b.is_exact_service) return -1;
+    if (!a.is_exact_service && b.is_exact_service) return 1;
+    return a.distance_km - b.distance_km;
+  });
+
   return ranked;
 }
 

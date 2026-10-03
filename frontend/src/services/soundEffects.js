@@ -122,15 +122,36 @@ class SoundManager {
     } catch (e) {}
   }
 
+  requestNotificationPermission() {
+    try {
+      if (typeof window !== "undefined" && "Notification" in window) {
+        if (Notification.permission === "default") {
+          Notification.requestPermission();
+        }
+      }
+    } catch (e) {}
+  }
+
   showSystemNotification(title, body) {
     try {
       if (typeof window !== "undefined" && "Notification" in window) {
         if (Notification.permission === "granted") {
-          new Notification(title, { body, icon: "/vite.svg" });
+          const notif = new Notification(title, { 
+            body, 
+            icon: "/vite.svg",
+            tag: "emergency-alert-" + Date.now(),
+            requireInteraction: true
+          });
+          setTimeout(() => notif.close(), 10000);
         } else if (Notification.permission !== "denied") {
           Notification.requestPermission().then((perm) => {
             if (perm === "granted") {
-              new Notification(title, { body, icon: "/vite.svg" });
+              const notif = new Notification(title, { 
+                body, 
+                icon: "/vite.svg",
+                tag: "emergency-alert-" + Date.now()
+              });
+              setTimeout(() => notif.close(), 10000);
             }
           });
         }

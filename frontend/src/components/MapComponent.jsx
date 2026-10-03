@@ -12,21 +12,24 @@ L.Icon.Default.mergeOptions({
 });
 
 // Custom SVG Icons for Emergency Services
-const createCustomIcon = (type, label = "") => {
+const createCustomIcon = (type = "Ambulance", label = "") => {
   let color = "#ef4444";
   let iconSvg = "⚠️";
   
-  if (type === "Ambulance") {
-    color = "#3b82f6";
+  if (type === "Ambulance" || type === "Medical") {
+    color = "#00ff88";
     iconSvg = "🚑";
-  } else if (type === "Police") {
-    color = "#f59e0b";
+  } else if (type === "Police" || type === "Crime") {
+    color = "#00e5ff";
     iconSvg = "🚓";
   } else if (type === "Fire") {
-    color = "#f97316";
+    color = "#ff334b";
     iconSvg = "🚒";
+  } else if (type === "Rescue" || type === "Hazard") {
+    color = "#eab308";
+    iconSvg = "🛟";
   } else if (type === "citizen") {
-    color = "#ef4444";
+    color = "#ff334b";
     iconSvg = "📍";
   } else if (type === "picker") {
     color = "#10b981";

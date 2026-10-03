@@ -85,7 +85,12 @@ async function logAudit(userId, userName, action, incidentId, details, req) {
 }
 
 // ================= REAL-TIME 5-SERVICE DISPATCH BATCH & 5-MIN TIMEOUT =================
-async function dispatchBatchToResponders(incidentId, rankedResponders, batchSize = 5, batchIndex = 0, timeoutSeconds = 300) {
+async function dispatchBatchToResponders(incidentId, rankedResponders, batchSize = 5, batchIndex = 0, timeoutSeconds = 300, incident = null) {
+  if (!incident) {
+    try {
+      incident = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
+    } catch (e) {}
+  }
   const startIndex = batchIndex * batchSize;
   const currentBatch = rankedResponders.slice(startIndex, startIndex + batchSize);
 
@@ -102,10 +107,34 @@ async function dispatchBatchToResponders(incidentId, rankedResponders, batchSize
 
   const expiresAt = Date.now() + timeoutSeconds * 1000;
 
-  // Alert all responders in current batch of 5
+  // Alert all responders in current batch and globally
+  io.emit('incoming_job_alert', {
+    incidentId,
+    incident,
+    emergency_type: incident?.emergency_type || 'Emergency',
+    suggested_service: incident?.suggested_service || 'Emergency Services',
+    description: incident?.description || '',
+    address: incident?.address || 'GPS Location',
+    lat: incident?.lat,
+    lng: incident?.lng,
+    timeoutSeconds,
+    expiresAt,
+    batchNumber: batchIndex + 1,
+    totalInBatch: currentBatch.length,
+    distanceKm: currentBatch[0]?.distance_km || 2.1,
+    etaMinutes: currentBatch[0]?.eta_minutes || 5
+  });
+
   currentBatch.forEach((responder) => {
     io.to(`responder_${responder.id}`).emit('incoming_job_alert', {
       incidentId,
+      incident,
+      emergency_type: incident?.emergency_type || 'Emergency',
+      suggested_service: incident?.suggested_service || responder.service_type,
+      description: incident?.description || '',
+      address: incident?.address || 'GPS Location',
+      lat: incident?.lat,
+      lng: incident?.lng,
       timeoutSeconds,
       expiresAt,
       batchNumber: batchIndex + 1,
@@ -356,13 +385,13 @@ app.post('/api/incidents', authenticateToken, async (req, res) => {
 
     // 3. Auto-Dispatch: Find ranked available responders
     if (!dupCheck.isDuplicate) {
-      const rankedResponders = await findRankedResponders(classification.suggested_service, lat, lng, 20.0);
+      const rankedResponders = await findRankedResponders(classification.suggested_service, lat, lng, 50.0);
       if (rankedResponders.length > 0) {
-        dispatchBatchToResponders(incidentId, rankedResponders, 5, 0, 300);
+        dispatchBatchToResponders(incidentId, rankedResponders, 5, 0, 300, createdIncident);
       } else {
         io.to('dispatch_room').emit('no_responders_alert', {
           incidentId,
-          message: `⚠️ No ${classification.suggested_service} units currently available within 20km for incident ${incidentId}.`
+          message: `⚠️ No ${classification.suggested_service} units currently available within 50km for incident ${incidentId}.`
         });
       }
     }
@@ -493,6 +522,7 @@ app.post('/api/incidents/:id/assign', authenticateToken, async (req, res) => {
       io.emit('incident_status_changed', { incident: updated, message: `${req.user.full_name} accepted incident ${incidentId}` });
       io.emit('responder_accepted_incident', { incident: updated, responder: respUser });
       io.emit('incident_updated', updated);
+      io.emit('responder_gps_update', { incidentId, lat: acceptLat, lng: acceptLng, responder: respUser, responderName: req.user.full_name });
 
       return res.json({ success: true, message: 'Assignment accepted', incident: updated });
     } else if (action === 'decline') {

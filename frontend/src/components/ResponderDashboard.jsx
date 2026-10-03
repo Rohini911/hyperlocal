@@ -47,34 +47,25 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
       setCountdown(data.timeoutSeconds || 300);
     });
 
-    // 2. Real-time Emergency SOS broadcast from any citizen
+    // 2. Real-time Emergency SOS broadcast from any citizen (Received by Police, Ambulance, Fire, Rescue)
     socket.on("incident_created", (newInc) => {
       loadIncidents();
       sounds.playAlertSiren();
-      
-      // Match responder service or universal rescue
-      const matchesService = 
-        !newInc.suggested_service || 
-        newInc.suggested_service === serviceType || 
-        serviceType === "Rescue" || 
-        (serviceType === "Police" && (newInc.emergency_type === "Crime" || newInc.emergency_type === "Police")) ||
-        (serviceType === "Ambulance" && (newInc.emergency_type === "Medical" || newInc.emergency_type === "Crash")) ||
-        (serviceType === "Fire" && (newInc.emergency_type === "Fire"));
-
-      if (matchesService) {
-        sounds.showSystemNotification("🚨 New Emergency SOS Reported!", `${newInc.emergency_type} incident reported at ${newInc.address || "GPS location"}`);
-        setIncomingAlert({
-          incidentId: newInc.id,
-          incident: newInc,
-          emergency_type: newInc.emergency_type,
-          description: newInc.description,
-          lat: newInc.lat,
-          lng: newInc.lng,
-          address: newInc.address,
-          timeoutSeconds: 300
-        });
-        setCountdown(300);
-      }
+      sounds.showSystemNotification(
+        "🚨 New Emergency SOS Reported!",
+        `${newInc.emergency_type || "Emergency"} reported at ${newInc.address || "GPS location"}`
+      );
+      setIncomingAlert({
+        incidentId: newInc.id,
+        incident: newInc,
+        emergency_type: newInc.emergency_type || "Emergency",
+        description: newInc.description || "",
+        lat: newInc.lat,
+        lng: newInc.lng,
+        address: newInc.address || `GPS: ${newInc.lat}, ${newInc.lng}`,
+        timeoutSeconds: 300
+      });
+      setCountdown(300);
     });
 
     socket.on("job_offer_expired", () => {
@@ -192,14 +183,32 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
 
   const handleAccept = async (incidentId) => {
     sounds.playSuccess();
+    
+    // Quick GPS capture upon acceptance
+    let currentLat = responderCoords.lat;
+    let currentLng = responderCoords.lng;
+
+    if (navigator.geolocation) {
+      try {
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 2500 });
+        });
+        if (pos && pos.coords) {
+          currentLat = parseFloat(pos.coords.latitude.toFixed(5));
+          currentLng = parseFloat(pos.coords.longitude.toFixed(5));
+          setResponderCoords({ lat: currentLat, lng: currentLng });
+        }
+      } catch (e) {}
+    }
+
     try {
-      const res = await incidentApi.assign(incidentId, "accept", responderCoords.lat, responderCoords.lng);
+      const res = await incidentApi.assign(incidentId, "accept", currentLat, currentLng);
       setIncomingAlert(null);
       const inc = res.incident || incidents.find(i => i.id === incidentId);
       if (inc) {
         if (inc.assigned_responder) {
-          inc.assigned_responder.lat = responderCoords.lat;
-          inc.assigned_responder.lng = responderCoords.lng;
+          inc.assigned_responder.lat = currentLat;
+          inc.assigned_responder.lng = currentLng;
         }
         setActiveIncident(inc);
         fetchRoute(inc);
@@ -209,8 +218,8 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
       // Immediately broadcast responder GPS start location
       socket.emit("live_gps_stream", {
         incidentId,
-        lat: responderCoords.lat,
-        lng: responderCoords.lng,
+        lat: currentLat,
+        lng: currentLng,
         responderName
       });
 
@@ -295,8 +304,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
   };
 
   const unassignedMatchingPool = incidents.filter(i => 
-    (i.status === "Reported" || i.status === "Awaiting Responder") && 
-    (i.suggested_service === serviceType || serviceType === "Rescue" || !i.suggested_service)
+    (i.status === "Reported" || i.status === "Awaiting Responder")
   );
 
   return (
@@ -545,7 +553,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                 Unit On Standby
               </h3>
               <p style={{ fontSize: "0.78rem", color: "#94a3b8", maxWidth: "280px", margin: "4px auto 0 auto" }}>
-                Listening for emergency dispatches matching {serviceType} response.
+                Listening for emergency dispatches across all active units.
               </p>
             </div>
           )}
