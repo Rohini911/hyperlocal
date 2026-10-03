@@ -1045,10 +1045,56 @@ io.on('connection', (socket) => {
   });
 });
 
+// ================= DATABASE DEDUPLICATION ROUTINE =================
+async function cleanDatabaseDuplicates() {
+  try {
+    // 1. Remove duplicate incidents with identical IDs
+    await dbRun(`
+      DELETE FROM incidents
+      WHERE rowid NOT IN (
+        SELECT MIN(rowid)
+        FROM incidents
+        GROUP BY id
+      )
+    `);
+
+    // 2. Remove duplicate users with identical emails
+    await dbRun(`
+      DELETE FROM users
+      WHERE rowid NOT IN (
+        SELECT MIN(rowid)
+        FROM users
+        GROUP BY LOWER(email)
+      )
+    `);
+
+    // 3. Remove duplicate contacts
+    await dbRun(`
+      DELETE FROM contacts
+      WHERE rowid NOT IN (
+        SELECT MIN(rowid)
+        FROM contacts
+        GROUP BY name, phone
+      )
+    `);
+
+    console.log("🧹 SQLite database duplicates cleaned successfully.");
+  } catch (e) {
+    console.warn("Deduplication warning:", e.message);
+  }
+}
+
+// Admin API to trigger deduplication on demand
+app.post('/api/admin/clean-duplicates', async (req, res) => {
+  await cleanDatabaseDuplicates();
+  res.json({ success: true, message: "All duplicate data removed from database." });
+});
+
 // ================= SERVER STARTUP =================
 if (require.main === module) {
   server.listen(PORT, async () => {
     await seedDatabase();
+    await cleanDatabaseDuplicates();
     console.log(`🚨 Hyperlocal Emergency Response Platform Server running on http://127.0.0.1:${PORT}`);
   });
 }
