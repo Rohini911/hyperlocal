@@ -92,11 +92,17 @@ export const deduplicateUsers = (list) => {
 // Auto-clean storage on script initialization
 export const removeDuplicateData = () => {
   try {
-    // 1. Clean incidents & filter out old static demo incidents
+    // 1. Clean incidents & filter out old static demo/test incidents
+    const legacyIds = new Set([
+      'INC-2026-1049', 'INC-2026-1032', 'INC-2025-001', 'INC-2025-002', 
+      'INC-2025-003', 'INC-2025-004', 'INC-2025-005', 'INC-577', 
+      'INC-489', 'INC-457', 'INC-858', 'INC-799'
+    ]);
+
     const rawIncidents = localStorage.getItem("app_incidents");
     if (rawIncidents) {
       const parsed = JSON.parse(rawIncidents);
-      const filtered = Array.isArray(parsed) ? parsed.filter(i => i && i.id !== 'INC-2026-1049' && i.id !== 'INC-2026-1032') : [];
+      const filtered = Array.isArray(parsed) ? parsed.filter(i => i && !legacyIds.has(i.id)) : [];
       const clean = deduplicateIncidents(filtered);
       localStorage.setItem("app_incidents", JSON.stringify(clean));
     }
@@ -113,7 +119,7 @@ export const removeDuplicateData = () => {
     const rawOffline = localStorage.getItem("emergency_offline_pending_reports");
     if (rawOffline) {
       const parsedOffline = JSON.parse(rawOffline);
-      const cleanOffline = deduplicateIncidents(parsedOffline);
+      const cleanOffline = deduplicateIncidents(parsedOffline).filter(i => !legacyIds.has(i.id));
       localStorage.setItem("emergency_offline_pending_reports", JSON.stringify(cleanOffline));
     }
   } catch (e) {
