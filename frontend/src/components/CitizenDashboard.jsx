@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { 
   AlertOctagon, Phone, MapPin, Navigation, CheckCircle2, 
-  Clock, RefreshCw, User, LogOut, PhoneCall, ChevronRight, Check
+  Clock, RefreshCw, User, LogOut, PhoneCall, ChevronRight, Check,
+  Volume2, VolumeX, ShieldAlert, HeartPulse, Flame
 } from "lucide-react";
 import MapComponent from "./MapComponent";
 import { incidentApi, routingApi, socket } from "../services/api";
+import { sounds } from "../services/soundEffects";
 
 const STATUS_STEPS = ["Awaiting Responder", "Assigned", "En Route", "On Scene", "Resolved"];
 
@@ -13,6 +15,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
   const [activeIncident, setActiveIncident] = useState(initialIncident || null);
   const [routeCoords, setRouteCoords] = useState([]);
   const [responderLiveLoc, setResponderLiveLoc] = useState(null);
+  const [isMuted, setIsMuted] = useState(sounds.isMuted());
 
   // Keep a ref of activeIncident for socket callbacks without triggering useEffect re-runs
   const activeIncidentRef = React.useRef(activeIncident);
@@ -32,6 +35,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
 
     const handleCreated = (data) => {
       loadIncidents();
+      sounds.playAlertSiren();
       if (data) {
         setActiveIncident(data);
         if (data.assigned_responder) fetchRoute(data);
@@ -40,6 +44,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
 
     const handleStatusChanged = (data) => {
       loadIncidents();
+      sounds.playStep();
       if (activeIncidentRef.current && data?.incident?.id === activeIncidentRef.current.id) {
         setActiveIncident(data.incident);
         if (data.incident.assigned_responder) {
@@ -94,12 +99,18 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
   };
 
   const handleSelectIncident = (inc) => {
+    sounds.playTap();
     setActiveIncident(inc);
     if (inc.assigned_responder) {
       fetchRoute(inc);
     } else {
       setRouteCoords([]);
     }
+  };
+
+  const handleToggleAudio = () => {
+    const muted = sounds.toggleMute();
+    setIsMuted(muted);
   };
 
   const fetchRoute = async (incident) => {
@@ -132,18 +143,32 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       {/* Top Bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "16px" }}>
         <div>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: "900", color: "#f8fafc" }}>
-            Citizen Emergency Dashboard
-          </h1>
-          <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: "900", color: "#f8fafc", margin: 0 }}>
+              Citizen Emergency Dashboard
+            </h1>
+            <span className="live-badge" style={{ fontSize: "0.72rem" }}>LIVE TRACKING</span>
+          </div>
+          <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginTop: "4px" }}>
             User: <strong>{currentUser?.full_name || "Guest Citizen"}</strong> • Live Incident Status & GPS Tracking
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          {/* Audio FX Toggle */}
+          <button
+            onClick={handleToggleAudio}
+            className="btn-outline"
+            style={{ padding: "9px 12px", fontSize: "0.82rem", color: isMuted ? "#94a3b8" : "#00ff88", borderColor: isMuted ? "rgba(255,255,255,0.1)" : "rgba(0,255,136,0.3)" }}
+            title={isMuted ? "Audio Muted - Click to Unmute" : "Audio Active - Click to Mute"}
+          >
+            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            <span style={{ marginLeft: "4px" }}>{isMuted ? "Muted" : "SFX On"}</span>
+          </button>
+
           {/* Prominent SOS button */}
           <button
-            onClick={onOpenSos}
+            onClick={() => { sounds.playAlertSiren(); onOpenSos(); }}
             className="btn-emergency-main"
             style={{ padding: "10px 20px", borderRadius: "8px", fontSize: "0.95rem" }}
           >
@@ -151,7 +176,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
           </button>
 
           <button
-            onClick={onLogout}
+            onClick={() => { sounds.playTap(); onLogout(); }}
             className="btn-outline"
             style={{ padding: "10px 14px", fontSize: "0.85rem" }}
           >
@@ -160,17 +185,65 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
         </div>
       </div>
 
+      {/* Emergency Helpline Quick-Dials */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" }}>
+        <a 
+          href="tel:108"
+          onClick={() => sounds.playTap()}
+          style={{ textDecoration: "none", background: "rgba(0, 255, 136, 0.08)", border: "1px solid rgba(0, 255, 136, 0.25)", borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#f8fafc", transition: "all 0.2s ease" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <HeartPulse size={20} color="#00ff88" />
+            <div>
+              <div style={{ fontSize: "0.82rem", fontWeight: "700" }}>Ambulance Helpline</div>
+              <div style={{ fontSize: "0.72rem", color: "#00ff88", fontWeight: "800" }}>Dial 108</div>
+            </div>
+          </div>
+          <PhoneCall size={16} color="#00ff88" />
+        </a>
+
+        <a 
+          href="tel:100"
+          onClick={() => sounds.playTap()}
+          style={{ textDecoration: "none", background: "rgba(0, 229, 255, 0.08)", border: "1px solid rgba(0, 229, 255, 0.25)", borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#f8fafc", transition: "all 0.2s ease" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <ShieldAlert size={20} color="#00e5ff" />
+            <div>
+              <div style={{ fontSize: "0.82rem", fontWeight: "700" }}>Police Control</div>
+              <div style={{ fontSize: "0.72rem", color: "#00e5ff", fontWeight: "800" }}>Dial 100 / 112</div>
+            </div>
+          </div>
+          <PhoneCall size={16} color="#00e5ff" />
+        </a>
+
+        <a 
+          href="tel:101"
+          onClick={() => sounds.playTap()}
+          style={{ textDecoration: "none", background: "rgba(255, 51, 75, 0.08)", border: "1px solid rgba(255, 51, 75, 0.25)", borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#f8fafc", transition: "all 0.2s ease" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <Flame size={20} color="#ff334b" />
+            <div>
+              <div style={{ fontSize: "0.82rem", fontWeight: "700" }}>Fire Rescue</div>
+              <div style={{ fontSize: "0.72rem", color: "#ff334b", fontWeight: "800" }}>Dial 101</div>
+            </div>
+          </div>
+          <PhoneCall size={16} color="#ff334b" />
+        </a>
+      </div>
+
       {/* Main Grid: Left = Incident History, Right = Active Incident Tracker & Route Map */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1.6fr", gap: "20px", alignItems: "start" }}>
         
         {/* Left: Your Incidents */}
         <div className="tactical-glass-card" style={{ padding: "20px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <h2 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#f8fafc" }}>
+            <h2 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#f8fafc", margin: 0 }}>
               Your Incidents ({incidents.length})
             </h2>
             <button
-              onClick={loadIncidents}
+              onClick={() => { sounds.playTap(); loadIncidents(); }}
               style={{ background: "transparent", border: "none", color: "#00e5ff", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "0.78rem" }}
             >
               <RefreshCw size={12} /> Refresh
@@ -199,7 +272,9 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                       background: isSel ? "rgba(0, 229, 255, 0.12)" : "rgba(30, 41, 59, 0.5)",
                       display: "flex",
                       flexDirection: "column",
-                      gap: "6px"
+                      gap: "6px",
+                      transition: "all 0.15s ease",
+                      transform: isSel ? "scale(1.01)" : "scale(1)"
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -236,12 +311,12 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
           <div className="tactical-glass-card" style={{ padding: "24px" }}>
             
             {/* Header with Incident Details */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
               <div>
                 <div style={{ fontSize: "0.75rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  Incident Tracker
+                  Active Incident Tracker
                 </div>
-                <h2 style={{ fontSize: "1.35rem", fontWeight: "900", color: "#f8fafc" }}>
+                <h2 style={{ fontSize: "1.35rem", fontWeight: "900", color: "#f8fafc", margin: 0 }}>
                   {activeIncident.id} • {activeIncident.emergency_type}
                 </h2>
                 <div style={{ fontSize: "0.8rem", color: "#00e5ff", marginTop: "2px" }}>
@@ -249,7 +324,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                 </div>
               </div>
 
-              <span className="neon-badge neon-badge-enroute" style={{ fontSize: "0.85rem", padding: "6px 14px" }}>
+              <span className={`neon-badge ${activeIncident.status === "Resolved" ? "neon-badge-resolved" : "neon-badge-enroute"}`} style={{ fontSize: "0.85rem", padding: "6px 14px" }}>
                 {activeIncident.status === "Reported" ? "Awaiting Responder" : activeIncident.status}
               </span>
             </div>
@@ -260,7 +335,6 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                 {STATUS_STEPS.map((step, idx) => {
                   const isDone = idx < currentStepIdx;
                   const isCurrent = idx === currentStepIdx;
-                  const isPending = idx > currentStepIdx;
 
                   return (
                     <div key={step} style={{ flex: 1, textAlign: "center", position: "relative" }}>
@@ -276,7 +350,8 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                         color: isDone ? "#070a12" : "white",
                         fontSize: "11px",
                         fontWeight: "800",
-                        boxShadow: isCurrent ? "0 0 12px rgba(255, 51, 75, 0.7)" : "none"
+                        boxShadow: isCurrent ? "0 0 14px rgba(255, 51, 75, 0.8)" : "none",
+                        transition: "all 0.3s ease"
                       }}>
                         {isDone ? <Check size={14} /> : idx + 1}
                       </div>
@@ -333,6 +408,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
 
                 <a
                   href={`tel:${activeIncident.assigned_responder.phone || "112"}`}
+                  onClick={() => sounds.playTap()}
                   style={{
                     background: "#00ff88",
                     color: "#070a12",

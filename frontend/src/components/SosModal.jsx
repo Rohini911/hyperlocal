@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { 
   AlertOctagon, X, MapPin, Navigation, CheckSquare, Square, 
-  AlertCircle, CheckCircle2, ArrowRight
+  AlertCircle, CheckCircle2, ArrowRight, Shield, Flame, HeartPulse, Activity
 } from "lucide-react";
 import MapComponent from "./MapComponent";
 import { incidentApi } from "../services/api";
+import { sounds } from "../services/soundEffects";
 
 const EXACT_CHECKLIST = [
   "Person injured",
@@ -34,6 +35,7 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
   }, [isOpen]);
 
   const handleDetectLocation = () => {
+    sounds.playTap();
     setIsLocating(true);
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -42,6 +44,7 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
             lat: parseFloat(pos.coords.latitude.toFixed(5)),
             lng: parseFloat(pos.coords.longitude.toFixed(5))
           });
+          sounds.playStep();
           setIsLocating(false);
         },
         () => {
@@ -56,6 +59,7 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
   };
 
   const handleToggleChecklist = (item) => {
+    sounds.playTap();
     setChecklistError("");
     if (checklist.includes(item)) {
       setChecklist(checklist.filter(i => i !== item));
@@ -64,18 +68,42 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
     }
   };
 
+  // Dynamic service calculation
+  const getDispatchedService = () => {
+    if (checklist.includes("Fire or smoke") || checklist.includes("Person trapped")) {
+      return { name: "Fire Department", icon: <Flame size={16} color="#ff334b" />, color: "#ff334b" };
+    }
+    if (checklist.includes("Crime/personal safety threat")) {
+      return { name: "Police Safety Unit", icon: <Shield size={16} color="#00e5ff" />, color: "#00e5ff" };
+    }
+    if (checklist.includes("Person injured") || checklist.includes("Person unconscious") || checklist.includes("Road accident")) {
+      return { name: "Emergency Ambulance", icon: <HeartPulse size={16} color="#00ff88" />, color: "#00ff88" };
+    }
+    return { name: "Quick Response Unit", icon: <Activity size={16} color="#eab308" />, color: "#eab308" };
+  };
+
+  const currentService = getDispatchedService();
+
+  // Danger severity score (1 to 4)
+  const severityScore = checklist.length;
+  const severityLabel = severityScore === 0 ? "Select Conditions" :
+    severityScore === 1 ? "Level 1 • High Priority" :
+    severityScore === 2 ? "Level 2 • Severe Emergency" :
+    "Level 3 • CRITICAL LIFE SAFETY";
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     // Mandatory Checklist validation: At least 1 item must be selected
     if (!checklist || checklist.length === 0) {
+      sounds.playAlertSiren();
       setChecklistError("⚠️ Please select at least one item from the emergency checklist before submitting.");
       return;
     }
 
     setIsSubmitting(true);
+    sounds.playAlertSiren();
     try {
-      // Determine base type from checklist
       let type = "Medical";
       if (checklist.includes("Fire or smoke") || checklist.includes("Person trapped")) type = "Fire";
       else if (checklist.includes("Crime/personal safety threat")) type = "Crime";
@@ -91,10 +119,11 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
       };
 
       const res = await incidentApi.create(payload);
+      sounds.playSuccess();
       if (onSubmitted) onSubmitted(res.incident || res.data);
       onClose();
     } catch (err) {
-      alert("Emergency SOS report submitted.");
+      sounds.playSuccess();
       onClose();
     } finally {
       setIsSubmitting(false);
@@ -105,28 +134,50 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-container" style={{ maxWidth: "640px", padding: "28px", background: "#0e1424", border: "1px solid rgba(255,51,75,0.4)" }}>
+      <div className="modal-container" style={{ maxWidth: "640px", padding: "26px", background: "#0e1424", border: "1px solid rgba(255,51,75,0.4)" }}>
         
         {/* Close Button */}
         <button
-          onClick={onClose}
+          onClick={() => { sounds.playTap(); onClose(); }}
           style={{ position: "absolute", top: "18px", right: "18px", background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer" }}
         >
           <X size={20} />
         </button>
 
         {/* Modal Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-          <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#ff334b", color: "white", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+          <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#ff334b", color: "white", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 16px rgba(255,51,75,0.4)" }}>
             <AlertOctagon size={22} />
           </div>
-          <h2 style={{ fontSize: "1.35rem", fontWeight: "900", color: "#f8fafc" }}>
-            Emergency SOS Report
-          </h2>
+          <div>
+            <h2 style={{ fontSize: "1.35rem", fontWeight: "900", color: "#f8fafc", margin: 0 }}>
+              Emergency SOS Report
+            </h2>
+          </div>
         </div>
-        <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginBottom: "20px" }}>
+        <p style={{ color: "#94a3b8", fontSize: "0.82rem", marginBottom: "16px" }}>
           Select all conditions that apply. Checklist is <strong>mandatory</strong>; description is <strong>optional</strong>.
         </p>
+
+        {/* Dynamic Live Triage Badge */}
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "space-between", 
+          padding: "10px 14px", 
+          borderRadius: "10px", 
+          background: "rgba(15, 23, 42, 0.7)", 
+          border: `1px solid ${currentService.color}40`,
+          marginBottom: "16px" 
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.84rem", color: currentService.color, fontWeight: "700" }}>
+            {currentService.icon}
+            <span>Target Dispatch: {currentService.name}</span>
+          </div>
+          <div style={{ fontSize: "0.74rem", color: severityScore > 2 ? "#ff334b" : severityScore > 0 ? "#f59e0b" : "#64748b", fontWeight: "800", textTransform: "uppercase" }}>
+            {severityLabel}
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           
@@ -157,7 +208,7 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
                       padding: "10px 12px",
                       borderRadius: "8px",
                       border: isChecked ? "1.5px solid #ff334b" : "1px solid rgba(255,255,255,0.1)",
-                      background: isChecked ? "rgba(255, 51, 75, 0.15)" : "rgba(30, 41, 59, 0.45)",
+                      background: isChecked ? "rgba(255, 51, 75, 0.18)" : "rgba(30, 41, 59, 0.45)",
                       color: isChecked ? "#ffffff" : "#cbd5e1",
                       fontSize: "0.82rem",
                       fontWeight: isChecked ? "700" : "500",
@@ -165,7 +216,8 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
                       display: "flex",
                       alignItems: "center",
                       gap: "8px",
-                      transition: "all 0.15s ease"
+                      transition: "all 0.15s ease",
+                      transform: isChecked ? "scale(1.02)" : "scale(1)"
                     }}
                   >
                     {isChecked ? <CheckSquare size={16} color="#ff334b" /> : <Square size={16} color="#64748b" />}
@@ -206,9 +258,9 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
               </button>
             </div>
 
-            <div style={{ height: "160px", borderRadius: "8px", overflow: "hidden", marginBottom: "6px", border: "1px solid rgba(56,189,248,0.3)" }}>
+            <div style={{ height: "150px", borderRadius: "8px", overflow: "hidden", marginBottom: "6px", border: "1px solid rgba(56,189,248,0.3)" }}>
               <MapComponent
-                height="160px"
+                height="150px"
                 center={[coords.lat, coords.lng]}
                 pickerMode={true}
                 pickerCoords={coords}
@@ -216,13 +268,17 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
               />
             </div>
             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-              Detected: Lat {coords.lat}, Lng {coords.lng} (Drag pin if needed)
+              Detected: Lat {coords.lat}, Lng {coords.lng} (Drag pin or tap map to adjust)
             </div>
           </div>
 
           {/* Actions */}
-          <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "8px" }}>
-            <button type="button" onClick={onClose} className="btn-outline">
+          <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "4px" }}>
+            <button 
+              type="button" 
+              onClick={() => { sounds.playTap(); onClose(); }} 
+              className="btn-outline"
+            >
               Cancel
             </button>
             <button
@@ -231,7 +287,7 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
               className="btn-emergency-main"
               style={{ padding: "12px 28px", fontSize: "0.95rem" }}
             >
-              {isSubmitting ? "Submitting..." : "🚨 Submit SOS Emergency Report"}
+              {isSubmitting ? "Dispatching..." : "🚨 Transmit SOS Emergency"}
             </button>
           </div>
 

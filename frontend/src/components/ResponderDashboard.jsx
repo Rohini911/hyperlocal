@@ -2,10 +2,12 @@ import React, { useState, useEffect } from "react";
 import { 
   Shield, Check, X, Navigation, MapPin, AlertTriangle, 
   Clock, HeartPulse, Flame, Activity, CheckCircle2,
-  RefreshCw, Power, FastForward, Phone, AlertOctagon, LogOut
+  RefreshCw, Power, FastForward, Phone, AlertOctagon, LogOut,
+  Volume2, VolumeX, Radio
 } from "lucide-react";
 import MapComponent from "./MapComponent";
 import { incidentApi, responderApi, routingApi, socket } from "../services/api";
+import { sounds } from "../services/soundEffects";
 
 export default function ResponderDashboard({ currentUser, onLogout }) {
   const [incidents, setIncidents] = useState([]);
@@ -13,6 +15,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
   const [routeCoords, setRouteCoords] = useState([]);
   const [routeStats, setRouteStats] = useState({ distanceKm: 0, durationMinutes: 0 });
   const [isAvailable, setIsAvailable] = useState(true);
+  const [isMuted, setIsMuted] = useState(sounds.isMuted());
 
   // Auto-detected Responder GPS location (Requirement 6)
   const [responderCoords, setResponderCoords] = useState({ lat: 17.5950, lng: 78.4950 });
@@ -34,6 +37,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     }
 
     socket.on("incoming_job_alert", (data) => {
+      sounds.playAlertSiren();
       setIncomingAlert(data);
       setCountdown(data.timeoutSeconds || 300);
     });
@@ -57,14 +61,26 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
   useEffect(() => {
     let timer;
     if (incomingAlert && countdown > 0) {
-      timer = setInterval(() => setCountdown((c) => c - 1), 1000);
+      timer = setInterval(() => {
+        setCountdown((c) => c - 1);
+        // Beep gently every 10 seconds during alert
+        if (countdown % 10 === 0) {
+          sounds.playStep();
+        }
+      }, 1000);
     } else if (countdown === 0 && incomingAlert) {
       setIncomingAlert(null);
     }
     return () => clearInterval(timer);
   }, [incomingAlert, countdown]);
 
+  const handleToggleAudio = () => {
+    const muted = sounds.toggleMute();
+    setIsMuted(muted);
+  };
+
   const handleDetectGPS = () => {
+    sounds.playTap();
     setIsLocating(true);
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -72,6 +88,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
           const lat = parseFloat(pos.coords.latitude.toFixed(5));
           const lng = parseFloat(pos.coords.longitude.toFixed(5));
           setResponderCoords({ lat, lng });
+          sounds.playStep();
           setIsLocating(false);
         },
         () => {
@@ -116,6 +133,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
   };
 
   const handleAccept = async (incidentId) => {
+    sounds.playSuccess();
     try {
       const res = await incidentApi.assign(incidentId, "accept");
       setIncomingAlert(null);
@@ -130,6 +148,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
   };
 
   const handleDecline = async (incidentId) => {
+    sounds.playTap();
     try {
       await incidentApi.assign(incidentId, "decline");
       setIncomingAlert(null);
@@ -141,6 +160,11 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
 
   const handleStatusChange = async (nextStatus) => {
     if (!activeIncident) return;
+    if (nextStatus === "Resolved") {
+      sounds.playSuccess();
+    } else {
+      sounds.playStep();
+    }
     try {
       const res = await incidentApi.updateStatus(
         activeIncident.id,
@@ -159,6 +183,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
 
   const simulateLiveMovement = () => {
     if (!activeIncident || !routeCoords || routeCoords.length < 2) return;
+    sounds.playStep();
     setIsSimulatingMovement(true);
 
     let step = 0;
@@ -184,12 +209,12 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
       {/* 5-Minute Incoming Job Alert Modal (Requirement 4 & 5) */}
       {incomingAlert && (
         <div className="modal-overlay">
-          <div className="modal-container" style={{ maxWidth: "480px", padding: "28px", textAlign: "center", border: "2px solid #ff334b", background: "#0e1424" }}>
-            <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "rgba(255, 51, 75, 0.2)", color: "#ff334b", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "14px" }}>
+          <div className="modal-container" style={{ maxWidth: "480px", padding: "28px", textAlign: "center", border: "2px solid #ff334b", background: "#0e1424", boxShadow: "0 0 35px rgba(255, 51, 75, 0.4)" }}>
+            <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "rgba(255, 51, 75, 0.2)", color: "#ff334b", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "14px", animation: "pulse 1.5s infinite" }}>
               <AlertOctagon size={32} />
             </div>
 
-            <div style={{ fontSize: "1.8rem", fontWeight: "900", color: "#ff334b", fontFamily: "monospace", marginBottom: "4px" }}>
+            <div style={{ fontSize: "2rem", fontWeight: "900", color: "#ff334b", fontFamily: "monospace", marginBottom: "4px" }}>
               {Math.floor(countdown / 60).toString().padStart(2, '0')}:{(countdown % 60).toString().padStart(2, '0')}
             </div>
             <div style={{ fontSize: "0.72rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "14px" }}>
@@ -228,30 +253,41 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "16px" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: "900", color: "#f8fafc" }}>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: "900", color: "#f8fafc", margin: 0 }}>
               {serviceType} Responder Console
             </h1>
             <span className="neon-badge neon-badge-enroute" style={{ fontSize: "0.75rem" }}>
               {currentUser?.full_name || "Demo Responder"}
             </span>
           </div>
-          <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
+          <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginTop: "4px" }}>
             Auto-Detecting GPS: Lat {responderCoords.lat}, Lng {responderCoords.lng} • Matching Service: <strong>{serviceType}</strong>
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          {/* Audio FX Toggle */}
+          <button
+            onClick={handleToggleAudio}
+            className="btn-outline"
+            style={{ padding: "8px 12px", fontSize: "0.82rem", color: isMuted ? "#94a3b8" : "#00ff88", borderColor: isMuted ? "rgba(255,255,255,0.1)" : "rgba(0,255,136,0.3)" }}
+            title={isMuted ? "Audio Muted - Click to Unmute" : "Audio Active - Click to Mute"}
+          >
+            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            <span style={{ marginLeft: "4px" }}>{isMuted ? "Muted" : "SFX"}</span>
+          </button>
+
           <button
             onClick={handleDetectGPS}
             className="btn-outline"
             style={{ fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "4px" }}
           >
             <Navigation size={14} className={isLocating ? "animate-spin" : ""} />
-            {isLocating ? "Locating..." : "Refresh My GPS"}
+            {isLocating ? "Locating..." : "Refresh GPS"}
           </button>
 
           <button
-            onClick={onLogout}
+            onClick={() => { sounds.playTap(); onLogout(); }}
             className="btn-outline"
             style={{ padding: "8px 14px", fontSize: "0.85rem" }}
           >
@@ -266,11 +302,11 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
         {/* Left: Matching Incidents Pool (Requirement 5) */}
         <div className="tactical-glass-card" style={{ padding: "20px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <h2 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#f8fafc" }}>
+            <h2 style={{ fontSize: "1.1rem", fontWeight: "800", color: "#f8fafc", margin: 0 }}>
               Matching Emergency Pool ({unassignedMatchingPool.length})
             </h2>
             <button
-              onClick={loadIncidents}
+              onClick={() => { sounds.playTap(); loadIncidents(); }}
               style={{ background: "transparent", border: "none", color: "#00e5ff", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "0.78rem" }}
             >
               <RefreshCw size={12} /> Refresh
@@ -350,12 +386,12 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
           <div className="tactical-glass-card" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
             
             {/* Header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
               <div>
                 <span className="neon-badge neon-badge-enroute" style={{ marginBottom: "4px" }}>
                   Active Dispatch • {activeIncident.status}
                 </span>
-                <h2 style={{ fontSize: "1.35rem", fontWeight: "900", color: "#f8fafc" }}>
+                <h2 style={{ fontSize: "1.35rem", fontWeight: "900", color: "#f8fafc", margin: "4px 0" }}>
                   {activeIncident.id} • {activeIncident.emergency_type}
                 </h2>
                 <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
@@ -364,7 +400,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
               </div>
 
               {/* Status Update Controls (Requirement 7) */}
-              <div style={{ display: "flex", gap: "6px" }}>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                 {activeIncident.status === "Assigned" && (
                   <button
                     onClick={() => handleStatusChange("En Route")}
@@ -395,7 +431,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
             </div>
 
             {/* Distance & Travel Time Telemetry (Requirement 6) */}
-            <div style={{ background: "rgba(15, 23, 42, 0.7)", borderRadius: "10px", padding: "12px 16px", border: "1px solid rgba(56,189,248,0.2)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ background: "rgba(15, 23, 42, 0.7)", borderRadius: "10px", padding: "12px 16px", border: "1px solid rgba(56,189,248,0.2)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
               <div>
                 <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Distance to Scene: </span>
                 <strong style={{ color: "#00e5ff" }}>{routeStats.distanceKm} km</strong>
@@ -408,9 +444,9 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                 onClick={simulateLiveMovement}
                 disabled={isSimulatingMovement}
                 className="btn-outline"
-                style={{ fontSize: "0.78rem", padding: "4px 10px" }}
+                style={{ fontSize: "0.78rem", padding: "4px 10px", color: isSimulatingMovement ? "#00ff88" : "#f8fafc" }}
               >
-                <FastForward size={14} /> {isSimulatingMovement ? "Navigating GPS..." : "Simulate Travel"}
+                <FastForward size={14} className={isSimulatingMovement ? "animate-spin" : ""} /> {isSimulatingMovement ? "Navigating GPS..." : "Simulate Travel"}
               </button>
             </div>
 

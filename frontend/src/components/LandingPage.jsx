@@ -1,5 +1,6 @@
-import React from "react";
-import { AlertOctagon, User, Shield, ArrowRight } from "lucide-react";
+import React, { useState } from "react";
+import { AlertOctagon, User, Shield, ArrowRight, Activity, Volume2, VolumeX, Radio, Zap } from "lucide-react";
+import { sounds } from "../services/soundEffects";
 
 export default function LandingPage({
   onContinueAsGuest,
@@ -9,6 +10,23 @@ export default function LandingPage({
   onOpenResponderRegister,
   onTriggerSos
 }) {
+  const [isMuted, setIsMuted] = useState(sounds.isMuted());
+
+  const handleSos = () => {
+    sounds.playAlertSiren();
+    onTriggerSos();
+  };
+
+  const handleAction = (cb) => {
+    sounds.playTap();
+    if (cb) cb();
+  };
+
+  const handleToggleAudio = () => {
+    const muted = sounds.toggleMute();
+    setIsMuted(muted);
+  };
+
   return (
     <div style={{
       minHeight: "100vh",
@@ -29,30 +47,46 @@ export default function LandingPage({
         justifyContent: "space-between",
         alignItems: "center",
         paddingBottom: "16px",
-        borderBottom: "1px solid rgba(255,255,255,0.1)"
+        borderBottom: "1px solid rgba(255,255,255,0.1)",
+        flexWrap: "wrap",
+        gap: "12px"
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "#ff334b", display: "flex", alignItems: "center", justifyContent: "center", color: "white", boxShadow: "0 0 16px rgba(255,51,75,0.6)" }}>
-            <Shield size={22} />
+          <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: "#ff334b", display: "flex", alignItems: "center", justifyContent: "center", color: "white", boxShadow: "0 0 20px rgba(255,51,75,0.65)" }}>
+            <Shield size={24} />
           </div>
           <div>
-            <div style={{ fontSize: "1.15rem", fontWeight: "900", color: "#f8fafc" }}>
-              Hyperlocal Emergency Response Platform
+            <div style={{ fontSize: "1.18rem", fontWeight: "900", color: "#f8fafc", letterSpacing: "-0.01em" }}>
+              Hyperlocal Emergency Platform
             </div>
-            <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
-              Fast • Hyperlocal • Direct Service Dispatch
+            <div style={{ fontSize: "0.74rem", color: "#00e5ff", fontWeight: "600", display: "flex", alignItems: "center", gap: "5px" }}>
+              <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#00ff88", display: "inline-block", boxShadow: "0 0 8px #00ff88" }}></span>
+              Direct First Responder Dispatch System
             </div>
           </div>
         </div>
 
-        {/* Big Top SOS Button */}
-        <button
-          onClick={onTriggerSos}
-          className="btn-emergency-main"
-          style={{ padding: "10px 22px", borderRadius: "24px", fontSize: "0.95rem" }}
-        >
-          <AlertOctagon size={18} /> SOS EMERGENCY
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {/* Audio FX Toggle */}
+          <button
+            onClick={handleToggleAudio}
+            className="btn-outline"
+            style={{ padding: "8px 12px", fontSize: "0.82rem", color: isMuted ? "#94a3b8" : "#00ff88", borderColor: isMuted ? "rgba(255,255,255,0.1)" : "rgba(0,255,136,0.3)" }}
+            title={isMuted ? "Audio Muted - Click to Unmute" : "Audio Active - Click to Mute"}
+          >
+            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            <span style={{ marginLeft: "4px" }}>{isMuted ? "Muted" : "SFX"}</span>
+          </button>
+
+          {/* Big Top SOS Button */}
+          <button
+            onClick={handleSos}
+            className="btn-emergency-main"
+            style={{ padding: "10px 24px", borderRadius: "24px", fontSize: "0.95rem" }}
+          >
+            <AlertOctagon size={18} /> SOS EMERGENCY
+          </button>
+        </div>
       </header>
 
       {/* Main Hero & Portals */}
@@ -60,31 +94,31 @@ export default function LandingPage({
         
         {/* Headline */}
         <div style={{ marginBottom: "36px" }}>
-          <h1 style={{ fontSize: "2.6rem", fontWeight: "900", lineHeight: "1.2", marginBottom: "12px", color: "#f8fafc" }}>
+          <h1 style={{ fontSize: "2.8rem", fontWeight: "900", lineHeight: "1.15", marginBottom: "12px", color: "#f8fafc" }}>
             Immediate Hyperlocal Emergency Response
           </h1>
-          <p style={{ color: "#94a3b8", fontSize: "1.05rem", maxWidth: "680px", margin: "0 auto" }}>
+          <p style={{ color: "#94a3b8", fontSize: "1.08rem", maxWidth: "700px", margin: "0 auto", lineHeight: "1.5" }}>
             Submit an emergency SOS with mandatory danger checklist and automatic GPS detection. Nearby available responders (Ambulance, Police, Fire) are notified in real time.
           </p>
         </div>
 
-        {/* Center Prominent SOS Button */}
-        <div style={{ marginBottom: "48px" }}>
+        {/* Center Prominent SOS Button with live radar rings */}
+        <div style={{ marginBottom: "52px", position: "relative", display: "inline-block" }}>
           <button
-            onClick={onTriggerSos}
+            onClick={handleSos}
             className="sos-main-trigger"
             style={{ margin: "0 auto" }}
           >
-            <AlertOctagon size={44} color="white" />
-            <span style={{ fontWeight: "900", fontSize: "1.2rem", letterSpacing: "1px", marginTop: "4px" }}>
+            <AlertOctagon size={48} color="white" />
+            <span style={{ fontWeight: "900", fontSize: "1.25rem", letterSpacing: "1px", marginTop: "4px" }}>
               SOS
             </span>
-            <span style={{ fontSize: "0.68rem", opacity: 0.85, fontWeight: "700" }}>
+            <span style={{ fontSize: "0.7rem", opacity: 0.9, fontWeight: "800" }}>
               EMERGENCY
             </span>
           </button>
-          <div style={{ fontSize: "0.82rem", color: "#94a3b8", marginTop: "14px" }}>
-            Click SOS to open emergency form • Automatic GPS detection • No login required
+          <div style={{ fontSize: "0.85rem", color: "#94a3b8", marginTop: "16px", fontWeight: "500" }}>
+            📍 Click SOS to open emergency form • Automatic GPS detection • No login required
           </div>
         </div>
 
@@ -92,15 +126,15 @@ export default function LandingPage({
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "24px", textAlign: "left" }}>
           
           {/* Card 1: Guest Access & Citizen Portal */}
-          <div className="tactical-glass-card" style={{ padding: "26px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div className="tactical-glass-card" style={{ padding: "28px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
             <div>
-              <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "rgba(0,229,255,0.15)", color: "#00e5ff", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "14px" }}>
-                <User size={24} />
+              <div style={{ width: "46px", height: "46px", borderRadius: "12px", background: "rgba(0,229,255,0.15)", color: "#00e5ff", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "16px", boxShadow: "0 0 16px rgba(0,229,255,0.2)" }}>
+                <User size={26} />
               </div>
-              <h2 style={{ fontSize: "1.25rem", fontWeight: "800", color: "#f8fafc", marginBottom: "6px" }}>
+              <h2 style={{ fontSize: "1.3rem", fontWeight: "800", color: "#f8fafc", marginBottom: "6px" }}>
                 Citizen Portal
               </h2>
-              <p style={{ color: "#94a3b8", fontSize: "0.88rem", lineHeight: "1.5", marginBottom: "20px" }}>
+              <p style={{ color: "#94a3b8", fontSize: "0.9rem", lineHeight: "1.5", marginBottom: "22px" }}>
                 Submit emergency reports, track responder GPS live, and view assigned ambulance, police, or fire units.
               </p>
             </div>
@@ -108,9 +142,9 @@ export default function LandingPage({
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {/* 1. Continue as Guest */}
               <button
-                onClick={onContinueAsGuest}
+                onClick={() => handleAction(onContinueAsGuest)}
                 className="btn-primary-blue"
-                style={{ width: "100%", padding: "11px", borderRadius: "8px", fontSize: "0.9rem" }}
+                style={{ width: "100%", padding: "12px", borderRadius: "10px", fontSize: "0.92rem" }}
               >
                 Continue as Guest <ArrowRight size={16} />
               </button>
@@ -118,17 +152,17 @@ export default function LandingPage({
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 {/* 2. Citizen Login */}
                 <button
-                  onClick={onOpenCitizenLogin}
+                  onClick={() => handleAction(onOpenCitizenLogin)}
                   className="btn-outline"
-                  style={{ padding: "10px", fontSize: "0.85rem" }}
+                  style={{ padding: "10px", fontSize: "0.86rem" }}
                 >
                   Citizen Login
                 </button>
                 {/* 3. Citizen Register */}
                 <button
-                  onClick={onOpenCitizenRegister}
+                  onClick={() => handleAction(onOpenCitizenRegister)}
                   className="btn-outline"
-                  style={{ padding: "10px", fontSize: "0.85rem" }}
+                  style={{ padding: "10px", fontSize: "0.86rem" }}
                 >
                   Citizen Register
                 </button>
@@ -137,15 +171,15 @@ export default function LandingPage({
           </div>
 
           {/* Card 2: Responder Portal (Ambulance, Police, Fire) */}
-          <div className="tactical-glass-card" style={{ padding: "26px", display: "flex", flexDirection: "column", justifyContent: "space-between", border: "1px solid rgba(0,255,136,0.3)" }}>
+          <div className="tactical-glass-card" style={{ padding: "28px", display: "flex", flexDirection: "column", justifyContent: "space-between", border: "1px solid rgba(0,255,136,0.3)" }}>
             <div>
-              <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "rgba(0,255,136,0.15)", color: "#00ff88", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "14px" }}>
-                <Shield size={24} />
+              <div style={{ width: "46px", height: "46px", borderRadius: "12px", background: "rgba(0,255,136,0.15)", color: "#00ff88", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "16px", boxShadow: "0 0 16px rgba(0,255,136,0.2)" }}>
+                <Shield size={26} />
               </div>
-              <h2 style={{ fontSize: "1.25rem", fontWeight: "800", color: "#f8fafc", marginBottom: "6px" }}>
+              <h2 style={{ fontSize: "1.3rem", fontWeight: "800", color: "#f8fafc", marginBottom: "6px" }}>
                 Responder Portal
               </h2>
-              <p style={{ color: "#94a3b8", fontSize: "0.88rem", lineHeight: "1.5", marginBottom: "20px" }}>
+              <p style={{ color: "#94a3b8", fontSize: "0.9rem", lineHeight: "1.5", marginBottom: "22px" }}>
                 For demo service responders (Ambulance, Police, Fire). Receive incoming nearby alerts, accept incidents, and view live turn-by-turn road route directions.
               </p>
             </div>
@@ -154,16 +188,16 @@ export default function LandingPage({
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 {/* 4. Responder Login */}
                 <button
-                  onClick={onOpenResponderLogin}
-                  style={{ background: "#00ff88", color: "#070a12", border: "none", borderRadius: "8px", padding: "11px", fontWeight: "800", fontSize: "0.88rem", cursor: "pointer" }}
+                  onClick={() => handleAction(onOpenResponderLogin)}
+                  style={{ background: "#00ff88", color: "#070a12", border: "none", borderRadius: "10px", padding: "12px", fontWeight: "800", fontSize: "0.9rem", cursor: "pointer", boxShadow: "0 4px 18px rgba(0,255,136,0.3)" }}
                 >
                   Responder Login
                 </button>
                 {/* 5. Responder Register */}
                 <button
-                  onClick={onOpenResponderRegister}
+                  onClick={() => handleAction(onOpenResponderRegister)}
                   className="btn-outline"
-                  style={{ padding: "11px", fontSize: "0.85rem", borderColor: "rgba(0,255,136,0.4)", color: "#00ff88" }}
+                  style={{ padding: "12px", fontSize: "0.86rem", borderColor: "rgba(0,255,136,0.4)", color: "#00ff88" }}
                 >
                   Responder Register
                 </button>
