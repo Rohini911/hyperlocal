@@ -1,7 +1,12 @@
 # 🚨 Hyperlocal Emergency Response Platform
 ### Real-Time Incident Coordination, Dispatching & Navigation Platform (Web + Desktop + Mobile)
 
-A real-time emergency coordination platform connecting citizens to nearby eligible responders (Ambulance, Police, Fire, Rescue) with live WebSockets, GPS pinpointing, speech translation, duplicate merge, 30-second dispatch countdown, live OSRM routing, in-app chat, and offline zero-network emergency directory access.
+[![Vercel Deployment](https://img.shields.io/badge/Vercel-Live_Production-000000?style=for-the-badge&logo=vercel)](https://hyperlocal-pi.vercel.app)
+[![Render Cloud API](https://img.shields.io/badge/Render-Backend_Active-46E3B7?style=for-the-badge&logo=render)](https://hyperlocal-backend.onrender.com)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/priya7888/hyperlocal.git)
+[![IIT Dossier](https://img.shields.io/badge/IIT_Dossier-PROJECT__PRESENTATION__IIT.md-FF334B?style=for-the-badge)](./PROJECT_PRESENTATION_IIT.md)
+
+> 📘 **For Academic / Jury Evaluation**: Please refer to [`PROJECT_PRESENTATION_IIT.md`](./PROJECT_PRESENTATION_IIT.md) for the complete Mathematical Formulations, Architecture Diagrams, 2-Minute Jury Script, and Q&A Defense Sheet.
 
 ---
 
