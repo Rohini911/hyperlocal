@@ -3,7 +3,7 @@ import {
   AlertOctagon, Phone, MapPin, Navigation, CheckCircle2, 
   Clock, RefreshCw, User, LogOut, PhoneCall, ChevronRight, Check,
   ShieldAlert, HeartPulse, Flame, Maximize2, Minimize2, Radio, Shield, Activity,
-  ListFilter, AlertTriangle, ChevronDown, Layers, ArrowLeft
+  ListFilter, AlertTriangle, ChevronDown, Layers, ArrowLeft, Trash2
 } from "lucide-react";
 import MapComponent from "./MapComponent";
 import { incidentApi, routingApi, socket, deduplicateIncidents } from "../services/api";
@@ -126,6 +126,33 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
     setViewMode("list");
   };
 
+  const handleDeleteIncident = (e, id) => {
+    e.stopPropagation();
+    sounds.playTap();
+    const updated = incidents.filter(i => i.id !== id);
+    setIncidents(updated);
+    try {
+      localStorage.setItem("app_incidents", JSON.stringify(updated));
+    } catch (err) {}
+    if (activeIncident?.id === id) {
+      setActiveIncident(updated.length > 0 ? updated[0] : null);
+      if (updated.length === 0) setViewMode("list");
+    }
+  };
+
+  const handleClearAllReports = () => {
+    sounds.playTap();
+    if (window.confirm("Clear all past emergency reports from your list?")) {
+      setIncidents([]);
+      setActiveIncident(null);
+      try {
+        localStorage.removeItem("app_incidents");
+        localStorage.removeItem("emergency_offline_pending_reports");
+      } catch (err) {}
+      setViewMode("list");
+    }
+  };
+
   const fetchRoute = async (incident) => {
     if (!incident.assigned_responder) return;
     try {
@@ -222,7 +249,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       {viewMode === "list" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           
-          {/* Header Banner */}
+          {/* Header Banner with Clear All option */}
           <div style={{
             display: "flex",
             justifyContent: "space-between",
@@ -238,9 +265,33 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                 All Emergency Reports
               </span>
             </div>
-            <span className="neon-badge neon-badge-info" style={{ fontSize: "0.72rem" }}>
-              {incidents.length} Total
-            </span>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span className="neon-badge neon-badge-info" style={{ fontSize: "0.72rem" }}>
+                {incidents.length} Total
+              </span>
+              {incidents.length > 0 && (
+                <button
+                  onClick={handleClearAllReports}
+                  title="Clear all past reports"
+                  style={{
+                    background: "rgba(255, 51, 75, 0.12)",
+                    border: "1px solid rgba(255, 51, 75, 0.3)",
+                    color: "#ff4d67",
+                    borderRadius: "6px",
+                    padding: "4px 8px",
+                    fontSize: "0.7rem",
+                    fontWeight: "700",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px"
+                  }}
+                >
+                  <Trash2 size={12} /> Clear All
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Vertical Stack of Report Cards */}
@@ -275,7 +326,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                       e.currentTarget.style.transform = "translateY(0)";
                     }}
                   >
-                    {/* Top Row: Service Icon, ID & Status */}
+                    {/* Top Row: Service Icon, ID & Status + Delete Icon */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <div style={{
@@ -300,9 +351,28 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                         </div>
                       </div>
 
-                      <span className={`neon-badge ${inc.status === "Resolved" ? "neon-badge-resolved" : "neon-badge-critical"}`} style={{ fontSize: "0.68rem", padding: "3px 8px" }}>
-                        {inc.status}
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span className={`neon-badge ${inc.status === "Resolved" ? "neon-badge-resolved" : "neon-badge-critical"}`} style={{ fontSize: "0.68rem", padding: "3px 8px" }}>
+                          {inc.status}
+                        </span>
+                        <button
+                          onClick={(e) => handleDeleteIncident(e, inc.id)}
+                          title="Delete report"
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "#64748b",
+                            cursor: "pointer",
+                            padding: "4px",
+                            display: "flex",
+                            alignItems: "center"
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = "#ff4d67"}
+                          onMouseLeave={(e) => e.currentTarget.style.color = "#64748b"}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Middle: Details & Address */}
