@@ -474,8 +474,14 @@ app.post('/api/incidents/:id/assign', authenticateToken, async (req, res) => {
       await logAudit(req.user.id, req.user.full_name, 'ACCEPT_ASSIGNMENT', incidentId, `Accepted assignment`, req);
 
       const updated = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
-      io.to(`incident_${incidentId}`).emit('incident_updated', updated);
-      io.to('dispatch_room').emit('incident_updated', updated);
+      const respUser = await dbGet(`SELECT r.*, u.full_name, u.phone FROM responders r JOIN users u ON r.user_id = u.id WHERE r.id = ?`, [responder.id]);
+      if (updated) {
+        updated.assigned_responder = respUser;
+      }
+
+      io.emit('incident_status_changed', { incident: updated, message: `${req.user.full_name} accepted incident ${incidentId}` });
+      io.emit('responder_accepted_incident', { incident: updated, responder: respUser });
+      io.emit('incident_updated', updated);
 
       return res.json({ success: true, message: 'Assignment accepted', incident: updated });
     } else if (action === 'decline') {
@@ -754,9 +760,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('live_gps_stream', (data) => {
-    const { incidentId, lat, lng, heading } = data;
-    io.to(`incident_${incidentId}`).emit('responder_gps_update', { lat, lng, heading });
-    io.to('dispatch_room').emit('responder_gps_update', { lat, lng, heading });
+    const { incidentId, lat, lng, heading, responderName } = data;
+    io.emit('responder_gps_update', { incidentId, lat, lng, heading, responderName });
   });
 });
 

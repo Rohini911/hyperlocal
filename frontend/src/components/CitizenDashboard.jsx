@@ -3,7 +3,7 @@ import {
   AlertOctagon, Phone, MapPin, Navigation, CheckCircle2, 
   Clock, RefreshCw, User, LogOut, PhoneCall, ChevronRight, Check,
   ShieldAlert, HeartPulse, Flame, Maximize2, Minimize2, Radio, Shield, Activity,
-  ListFilter, AlertTriangle, ChevronDown, Layers, ArrowLeft, Trash2
+  ListFilter, AlertTriangle, ChevronDown, Layers, ArrowLeft, Trash2, X, Bell
 } from "lucide-react";
 import MapComponent from "./MapComponent";
 import { incidentApi, routingApi, socket, deduplicateIncidents } from "../services/api";
@@ -18,6 +18,9 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
   const [viewMode, setViewMode] = useState(initialIncident ? "details" : "list");
   const [routeCoords, setRouteCoords] = useState([]);
   const [responderLiveLoc, setResponderLiveLoc] = useState(null);
+
+  // Live Responder Acceptance Popup Toast
+  const [acceptanceToast, setAcceptanceToast] = useState(null);
 
   // Keep a ref of activeIncident for socket callbacks
   const activeIncidentRef = useRef(activeIncident);
@@ -37,6 +40,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
   useEffect(() => {
     loadIncidents();
 
+    // 1. New incident submitted
     const handleCreated = (data) => {
       sounds.playAlertSiren();
       if (data && data.id) {
@@ -47,13 +51,38 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       }
     };
 
+    // 2. Responder Accepted Incident
+    const handleAccepted = (data) => {
+      sounds.playSuccess();
+      const inc = data.incident || data;
+      const resp = data.responder || inc.assigned_responder;
+      
+      setAcceptanceToast({
+        title: "🚨 Emergency Unit Accepted!",
+        message: `${resp?.full_name || "Official Unit"} (${resp?.service_type || "Responder"}) accepted your report. Unit is en route!`,
+        service: resp?.service_type || inc.suggested_service
+      });
+
+      if (inc && inc.id) {
+        setActiveIncident(inc);
+        setViewMode("details");
+        if (resp) {
+          setResponderLiveLoc({ lat: resp.lat, lng: resp.lng });
+          fetchRoute(inc);
+        }
+      }
+      loadIncidents();
+    };
+
+    // 3. Status changes (Assigned, En Route, On Scene, Resolved)
     const handleStatusChanged = (data) => {
       sounds.playStep();
       loadIncidents();
-      if (activeIncidentRef.current && data?.incident?.id === activeIncidentRef.current.id) {
-        setActiveIncident(data.incident);
-        if (data.incident.assigned_responder) {
-          fetchRoute(data.incident);
+      const inc = data?.incident;
+      if (activeIncidentRef.current && inc?.id === activeIncidentRef.current.id) {
+        setActiveIncident(inc);
+        if (inc.assigned_responder) {
+          fetchRoute(inc);
         }
       }
     };
@@ -68,22 +97,35 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       }
     };
 
+    // 4. Live moving GPS stream from responder
     const handleGps = (data) => {
-      setResponderLiveLoc({ lat: data.lat, lng: data.lng });
+      if (data && data.lat && data.lng) {
+        setResponderLiveLoc({ lat: data.lat, lng: data.lng });
+      }
     };
 
     socket.on("incident_created", handleCreated);
+    socket.on("responder_accepted_incident", handleAccepted);
     socket.on("incident_status_changed", handleStatusChanged);
     socket.on("incident_updated", handleUpdated);
     socket.on("responder_gps_update", handleGps);
 
     return () => {
       socket.off("incident_created", handleCreated);
+      socket.off("responder_accepted_incident", handleAccepted);
       socket.off("incident_status_changed", handleStatusChanged);
       socket.off("incident_updated", handleUpdated);
       socket.off("responder_gps_update", handleGps);
     };
   }, []);
+
+  // Auto-dismiss acceptance notification toast after 7 seconds
+  useEffect(() => {
+    if (acceptanceToast) {
+      const t = setTimeout(() => setAcceptanceToast(null), 7000);
+      return () => clearTimeout(t);
+    }
+  }, [acceptanceToast]);
 
   const loadIncidents = async () => {
     try {
@@ -200,7 +242,53 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       minHeight: "100vh"
     }}>
       
-      {/* 1. Sleek Top Navigation Bar */}
+      {/* 1. Live Responder Acceptance Popup Banner */}
+      {acceptanceToast && (
+        <div style={{
+          background: "linear-gradient(135deg, rgba(0, 229, 255, 0.22), rgba(14, 20, 36, 0.98))",
+          border: "2px solid #00e5ff",
+          borderRadius: "14px",
+          padding: "14px 18px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          boxShadow: "0 8px 30px rgba(0, 229, 255, 0.4)",
+          animation: "slideDown 0.3s ease",
+          zIndex: 1000
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{
+              width: "40px",
+              height: "40px",
+              borderRadius: "10px",
+              background: "rgba(0, 229, 255, 0.2)",
+              color: "#00e5ff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}>
+              <Bell size={22} className="animate-bounce" />
+            </div>
+            <div>
+              <div style={{ fontSize: "0.95rem", fontWeight: "900", color: "#00e5ff" }}>
+                {acceptanceToast.title}
+              </div>
+              <div style={{ fontSize: "0.82rem", color: "#f8fafc", fontWeight: "600" }}>
+                {acceptanceToast.message}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setAcceptanceToast(null)}
+            style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", padding: "4px" }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
+      {/* 2. Sleek Top Navigation Bar */}
       <header style={{
         display: "flex",
         justifyContent: "space-between",
@@ -500,7 +588,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
               incidentLabel={`${activeIncident.id} (${activeIncident.emergency_type})`}
               responderLocation={responderLiveLoc || (activeIncident.assigned_responder ? { lat: activeIncident.assigned_responder.lat, lng: activeIncident.assigned_responder.lng } : null)}
               responderType={activeIncident.assigned_responder?.service_type || activeIncident.suggested_service}
-              responderLabel={activeIncident.assigned_responder?.full_name || "Assigned Responder"}
+              responderLabel={activeIncident.assigned_responder?.full_name ? `${activeIncident.assigned_responder.full_name} (Live GPS)` : "Assigned Responder"}
               routeCoordinates={routeCoords}
             />
 
