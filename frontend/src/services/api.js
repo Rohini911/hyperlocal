@@ -248,10 +248,19 @@ export const incidentApi = {
       return { success: true, data: inc, incident: inc };
     } catch (err) {
       const incidents = getStoredIncidents();
+      const reqTypes = incidentData.requiredResponderTypes || incidentData.required_responder_types ||
+        [incidentData.emergency_type === "Fire" ? "FIRE" : incidentData.emergency_type === "Crime" ? "POLICE" : "AMBULANCE"];
       const newInc = {
         id: `INC-${Math.floor(100 + Math.random() * 900)}`,
         emergency_type: incidentData.emergency_type || "Medical",
-        suggested_service: incidentData.emergency_type === "Fire" ? "Fire" : incidentData.emergency_type === "Crime" ? "Police" : "Ambulance",
+        requiredResponderTypes: reqTypes,
+        required_responder_types: reqTypes,
+        suggested_service: reqTypes.join(', '),
+        responder_requirements: reqTypes.map(t => ({
+          responder_type: t,
+          service_type: t === 'POLICE' ? 'Police' : t === 'FIRE' ? 'Fire' : 'Ambulance',
+          status: 'SEARCHING'
+        })),
         severity: "Critical",
         description: incidentData.description || "",
         checklist_json: JSON.stringify(incidentData.checklist || []),

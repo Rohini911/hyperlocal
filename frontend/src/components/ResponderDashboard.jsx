@@ -113,10 +113,22 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
       const data = await incidentApi.list();
       setIncidents(data || []);
 
-      const assigned = data.find(i => i.assigned_responder_id === currentUser?.responderId && i.status !== "Resolved");
+      const assigned = data.find(i => {
+        const isDirect = i.assigned_responder_id === currentUser?.responderId;
+        const myReq = i.responder_requirements?.find(r =>
+          r.assigned_responder_id === currentUser?.responderId ||
+          r.assigned_responder?.id === currentUser?.responderId ||
+          (serviceType && r.service_type?.toLowerCase() === serviceType?.toLowerCase())
+        );
+        const myTaskActive = myReq ? (myReq.status !== 'RESOLVED' && myReq.status !== 'Resolved') : (i.status !== 'Resolved');
+        return (isDirect || myReq) && myTaskActive && i.status !== "Cancelled";
+      });
+
       if (assigned) {
         setActiveIncident(assigned);
         fetchRoute(assigned);
+      } else {
+        setActiveIncident(null);
       }
     } catch (e) {
       console.warn("Failed to load responder incidents", e);
@@ -153,17 +165,6 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     }
   };
 
-  const handleDecline = async (incidentId) => {
-    sounds.playTap();
-    try {
-      await incidentApi.assign(incidentId, "decline");
-      setIncomingAlert(null);
-      loadIncidents();
-    } catch (err) {
-      setIncomingAlert(null);
-    }
-  };
-
   const handleStatusChange = async (nextStatus) => {
     if (!activeIncident) return;
     if (nextStatus === "Resolved") {
@@ -180,7 +181,11 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
         responderCoords.lng,
         nextStatus === "Resolved" ? "Handled & Stabilized" : null
       );
-      setActiveIncident(res.incident);
+      if (nextStatus === "Resolved") {
+        setActiveIncident(null);
+      } else {
+        setActiveIncident(res.incident);
+      }
       loadIncidents();
     } catch (err) {
       alert("Failed to update status.");
@@ -207,7 +212,20 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     }, 1000);
   };
 
-  const unassignedMatchingPool = incidents.filter(i => (i.status === "Reported" || i.status === "Awaiting Responder") && (i.suggested_service === serviceType || serviceType === "Rescue"));
+  const unassignedMatchingPool = incidents.filter(i => {
+    const isUnresolved = i.status !== "Resolved" && i.status !== "Cancelled" && i.status !== "Merged";
+    const requiresThisType = serviceType === "Rescue" ||
+      (i.suggested_service && i.suggested_service.toLowerCase().includes(serviceType.toLowerCase())) ||
+      (i.requiredResponderTypes && i.requiredResponderTypes.some(t => t.toUpperCase() === serviceType.toUpperCase())) ||
+      (i.required_responder_types && i.required_responder_types.some(t => t.toUpperCase() === serviceType.toUpperCase()));
+
+    const categoryAlreadyAssigned = i.responder_requirements &&
+      i.responder_requirements.some(r => r.service_type?.toLowerCase() === serviceType.toLowerCase() && r.status === 'ASSIGNED');
+
+    const isAlreadyAssignedToMe = i.assigned_responder_id === currentUser?.responderId;
+
+    return isUnresolved && requiresThisType && !categoryAlreadyAssigned && !isAlreadyAssignedToMe;
+  });
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "16px", display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -247,13 +265,6 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                 style={{ flex: 1, padding: "12px", fontSize: "0.95rem" }}
               >
                 <Check size={18} /> Accept Emergency
-              </button>
-              <button
-                onClick={() => handleDecline(incomingAlert.incidentId)}
-                className="btn-outline"
-                style={{ padding: "12px 18px" }}
-              >
-                Decline
               </button>
             </div>
           </div>
@@ -358,7 +369,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                     Location: {inc.address || `Lat ${inc.lat}, Lng ${inc.lng}`}
                   </div>
 
-                  {/* Accept / Reject Buttons (Requirement 5) */}
+                  {/* Accept Button (Only action available to responder) */}
                   <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
                     <button
                       onClick={() => handleAccept(inc.id)}
@@ -366,13 +377,6 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                       style={{ flex: 1, padding: "8px", fontSize: "0.85rem" }}
                     >
                       <Check size={16} /> Accept Incident
-                    </button>
-                    <button
-                      onClick={() => handleDecline(inc.id)}
-                      className="btn-outline"
-                      style={{ flex: 1, padding: "8px", fontSize: "0.85rem" }}
-                    >
-                      Reject
                     </button>
                   </div>
                 </div>
@@ -399,35 +403,52 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
                 </div>
               </div>
 
-              {/* Status Update Controls (Requirement 7) */}
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {activeIncident.status === "Assigned" && (
-                  <button
-                    onClick={() => handleStatusChange("En Route")}
-                    style={{ background: "#00e5ff", color: "#070a12", border: "none", borderRadius: "8px", padding: "8px 14px", fontWeight: "800", fontSize: "0.82rem", cursor: "pointer" }}
-                  >
-                    Start Travel (En Route)
-                  </button>
-                )}
+              {/* Status Update Controls (Requirement 7 & 9) */}
+              {(() => {
+                const myReq = activeIncident.responder_requirements?.find(
+                  r => r.assigned_responder_id === currentUser?.responderId ||
+                       r.assigned_responder?.id === currentUser?.responderId ||
+                       (serviceType && r.service_type?.toLowerCase() === serviceType?.toLowerCase())
+                );
+                const myStage = myReq?.status || activeIncident.status;
 
-                {activeIncident.status === "En Route" && (
-                  <button
-                    onClick={() => handleStatusChange("On Scene")}
-                    style={{ background: "#ffb800", color: "#070a12", border: "none", borderRadius: "8px", padding: "8px 14px", fontWeight: "800", fontSize: "0.82rem", cursor: "pointer" }}
-                  >
-                    Arrived (On Scene)
-                  </button>
-                )}
+                return (
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                    {(myStage === "ASSIGNED" || myStage === "Assigned" || (!myReq && (activeIncident.status === "Assigned" || activeIncident.status === "Partially Assigned"))) && (
+                      <button
+                        onClick={() => handleStatusChange("En Route")}
+                        style={{ background: "#00e5ff", color: "#070a12", border: "none", borderRadius: "8px", padding: "8px 14px", fontWeight: "800", fontSize: "0.82rem", cursor: "pointer" }}
+                      >
+                        Start Travel (En Route)
+                      </button>
+                    )}
 
-                {activeIncident.status === "On Scene" && (
-                  <button
-                    onClick={() => handleStatusChange("Resolved")}
-                    style={{ background: "#00ff88", color: "#070a12", border: "none", borderRadius: "8px", padding: "8px 14px", fontWeight: "800", fontSize: "0.82rem", cursor: "pointer" }}
-                  >
-                    Mark Resolved ✓
-                  </button>
-                )}
-              </div>
+                    {(myStage === "EN_ROUTE" || myStage === "En Route") && (
+                      <button
+                        onClick={() => handleStatusChange("On Scene")}
+                        style={{ background: "#ffb800", color: "#070a12", border: "none", borderRadius: "8px", padding: "8px 14px", fontWeight: "800", fontSize: "0.82rem", cursor: "pointer" }}
+                      >
+                        Arrived (On Scene)
+                      </button>
+                    )}
+
+                    {(myStage === "ON_SCENE" || myStage === "On Scene") && (
+                      <button
+                        onClick={() => handleStatusChange("Resolved")}
+                        style={{ background: "#00ff88", color: "#070a12", border: "none", borderRadius: "8px", padding: "8px 14px", fontWeight: "800", fontSize: "0.82rem", cursor: "pointer" }}
+                      >
+                        Mark Resolved ✓
+                      </button>
+                    )}
+
+                    {(myStage === "RESOLVED" || myStage === "Resolved") && (
+                      <span className="neon-badge neon-badge-resolved" style={{ fontSize: "0.82rem", padding: "6px 12px" }}>
+                        ✓ Your Task Resolved
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Distance & Travel Time Telemetry (Requirement 6) */}

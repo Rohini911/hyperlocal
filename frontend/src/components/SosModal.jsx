@@ -18,8 +18,15 @@ const EXACT_CHECKLIST = [
   "Other emergency"
 ];
 
+const RESPONDER_TYPE_OPTIONS = [
+  { id: "POLICE", label: "Police", icon: Shield, color: "#00e5ff" },
+  { id: "AMBULANCE", label: "Ambulance", icon: HeartPulse, color: "#00ff88" },
+  { id: "FIRE", label: "Fire", icon: Flame, color: "#ff334b" }
+];
+
 export default function SosModal({ isOpen, onClose, onSubmitted }) {
   const [checklist, setChecklist] = useState([]);
+  const [requiredResponderTypes, setRequiredResponderTypes] = useState(["AMBULANCE"]);
   const [description, setDescription] = useState("");
   const [checklistError, setChecklistError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -30,6 +37,7 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
   useEffect(() => {
     if (isOpen) {
       setChecklist([]);
+      setRequiredResponderTypes(["AMBULANCE"]);
       setDescription("");
       setChecklistError("");
       setShowMapPicker(false);
@@ -61,34 +69,58 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
     }
   };
 
+  const handleToggleResponderType = (typeId) => {
+    sounds.playTap();
+    setChecklistError("");
+    if (requiredResponderTypes.includes(typeId)) {
+      if (requiredResponderTypes.length > 1) {
+        setRequiredResponderTypes(requiredResponderTypes.filter(t => t !== typeId));
+      }
+    } else {
+      setRequiredResponderTypes([...requiredResponderTypes, typeId]);
+    }
+  };
+
   const handleToggleChecklist = (item) => {
     sounds.playTap();
     setChecklistError("");
+    let newChecklist;
     if (checklist.includes(item)) {
-      setChecklist(checklist.filter(i => i !== item));
+      newChecklist = checklist.filter(i => i !== item);
     } else {
-      setChecklist([...checklist, item]);
+      newChecklist = [...checklist, item];
+    }
+    setChecklist(newChecklist);
+
+    // Auto-enable corresponding responder types while preserving existing selections
+    const autoTypes = new Set(requiredResponderTypes);
+    if (item === "Fire or smoke" || item === "Person trapped") {
+      if (!checklist.includes(item)) autoTypes.add("FIRE");
+    }
+    if (item === "Crime/personal safety threat") {
+      if (!checklist.includes(item)) autoTypes.add("POLICE");
+    }
+    if (item === "Person injured" || item === "Person unconscious" || item === "Road accident") {
+      if (!checklist.includes(item)) autoTypes.add("AMBULANCE");
+    }
+    if (autoTypes.size > 0) {
+      setRequiredResponderTypes(Array.from(autoTypes));
     }
   };
 
-  // Dynamic service calculation
-  const getDispatchedService = () => {
-    if (checklist.includes("Fire or smoke") || checklist.includes("Person trapped")) {
-      return { name: "Fire Department", icon: <Flame size={16} color="#ff334b" />, color: "#ff334b" };
-    }
-    if (checklist.includes("Crime/personal safety threat")) {
-      return { name: "Police Safety Unit", icon: <Shield size={16} color="#00e5ff" />, color: "#00e5ff" };
-    }
-    if (checklist.includes("Person injured") || checklist.includes("Person unconscious") || checklist.includes("Road accident")) {
-      return { name: "Emergency Ambulance", icon: <HeartPulse size={16} color="#00ff88" />, color: "#00ff88" };
-    }
-    return { name: "Quick Response Unit", icon: <Activity size={16} color="#eab308" />, color: "#eab308" };
+  // Dynamic services calculation for multi-service emergency
+  const getDispatchedServices = () => {
+    return requiredResponderTypes.map(t => {
+      if (t === "FIRE") return { name: "Fire Department", icon: <Flame size={15} color="#ff334b" />, color: "#ff334b" };
+      if (t === "POLICE") return { name: "Police Safety Unit", icon: <Shield size={15} color="#00e5ff" />, color: "#00e5ff" };
+      return { name: "Emergency Ambulance", icon: <HeartPulse size={15} color="#00ff88" />, color: "#00ff88" };
+    });
   };
 
-  const currentService = getDispatchedService();
+  const activeServices = getDispatchedServices();
 
   // Danger severity score
-  const severityScore = checklist.length;
+  const severityScore = checklist.length + (requiredResponderTypes.length > 1 ? 1 : 0);
   const severityLabel = severityScore === 0 ? "Select Conditions" :
     severityScore === 1 ? "Level 1 • High Priority" :
     severityScore === 2 ? "Level 2 • Severe Emergency" :
@@ -108,12 +140,14 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
     sounds.playAlertSiren();
     try {
       let type = "Medical";
-      if (checklist.includes("Fire or smoke") || checklist.includes("Person trapped")) type = "Fire";
-      else if (checklist.includes("Crime/personal safety threat")) type = "Crime";
+      if (requiredResponderTypes.includes("FIRE")) type = "Fire";
+      else if (requiredResponderTypes.includes("POLICE")) type = "Crime";
       else if (checklist.includes("Road accident")) type = "Crash";
 
       const payload = {
         emergency_type: type,
+        requiredResponderTypes,
+        required_responder_types: requiredResponderTypes,
         description: description.trim(),
         checklist,
         lat: coords.lat,
@@ -159,23 +193,44 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
           </div>
         </div>
         <p style={{ color: "#94a3b8", fontSize: "0.82rem", marginBottom: "14px" }}>
-          Select all conditions that apply. Checklist is <strong>mandatory</strong>.
+          Select all conditions that apply. Checklist is <strong>mandatory</strong>. Multiple responder services supported.
         </p>
 
-        {/* Dynamic Live Triage Badge */}
+        {/* Dynamic Live Triage Badges for ALL Required Responder Types */}
         <div style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          flexWrap: "wrap",
           padding: "8px 12px",
           borderRadius: "8px",
           background: "rgba(15, 23, 42, 0.7)",
-          border: `1px solid ${currentService.color}40`,
-          marginBottom: "14px"
+          border: "1px solid rgba(0, 229, 255, 0.25)",
+          marginBottom: "14px",
+          gap: "8px"
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem", color: currentService.color, fontWeight: "700" }}>
-            {currentService.icon}
-            <span>Target Dispatch: {currentService.name}</span>
+          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+            <span style={{ fontSize: "0.78rem", color: "#94a3b8", fontWeight: "700" }}>Target Dispatch:</span>
+            {activeServices.map((svc) => (
+              <span
+                key={svc.name}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "0.76rem",
+                  color: svc.color,
+                  fontWeight: "800",
+                  background: `${svc.color}18`,
+                  border: `1px solid ${svc.color}45`,
+                  padding: "2px 8px",
+                  borderRadius: "6px"
+                }}
+              >
+                {svc.icon}
+                {svc.name}
+              </span>
+            ))}
           </div>
           <div style={{ fontSize: "0.72rem", color: severityScore > 2 ? "#ff334b" : severityScore > 0 ? "#f59e0b" : "#64748b", fontWeight: "800", textTransform: "uppercase" }}>
             {severityLabel}
@@ -184,11 +239,52 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           
-          {/* 1. Mandatory Checklist */}
+          {/* 1. Emergency Requirements Checklist (Multi-Select: Police, Ambulance, Fire) */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <label style={{ fontSize: "0.82rem", fontWeight: "800", color: "#00e5ff" }}>
+                1. Emergency Requirements (Required Responder Units) *
+              </label>
+              <span style={{ fontSize: "0.7rem", color: "#00e5ff", fontWeight: "700" }}>Multi-Select Supported</span>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginBottom: "12px" }}>
+              {RESPONDER_TYPE_OPTIONS.map((opt) => {
+                const isChecked = requiredResponderTypes.includes(opt.id);
+                const Icon = opt.icon;
+                return (
+                  <div
+                    key={opt.id}
+                    id={`req-type-${opt.id.toLowerCase()}`}
+                    onClick={() => handleToggleResponderType(opt.id)}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: "8px",
+                      border: isChecked ? `1.8px solid ${opt.color}` : "1px solid rgba(255,255,255,0.1)",
+                      background: isChecked ? `${opt.color}22` : "rgba(30, 41, 59, 0.45)",
+                      color: isChecked ? "#ffffff" : "#cbd5e1",
+                      fontSize: "0.82rem",
+                      fontWeight: isChecked ? "800" : "500",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      transition: "all 0.15s ease",
+                      transform: isChecked ? "scale(1.02)" : "scale(1)"
+                    }}
+                  >
+                    {isChecked ? <CheckSquare size={16} color={opt.color} /> : <Square size={16} color="#64748b" />}
+                    <Icon size={14} color={opt.color} />
+                    <span>{opt.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 2. Danger Conditions Checklist */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
               <label style={{ fontSize: "0.82rem", fontWeight: "800", color: "#ff334b" }}>
-                1. Emergency Checklist (Select at least one) *
+                2. Conditions Checklist (Select at least one) *
               </label>
               <span style={{ fontSize: "0.7rem", color: "#ff334b", fontWeight: "700" }}>Mandatory</span>
             </div>

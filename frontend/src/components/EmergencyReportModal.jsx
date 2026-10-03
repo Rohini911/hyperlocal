@@ -112,8 +112,22 @@ export default function EmergencyReportModal({ isOpen, onClose, onSuccess }) {
       else if (emergencyType.includes("Road")) mappedType = "Crash";
       else if (emergencyType.includes("Hazard") || emergencyType.includes("Flood")) mappedType = "Flood";
 
+      const requiredTypes = new Set();
+      if (emergencyType.includes("Fire")) requiredTypes.add("FIRE");
+      if (emergencyType.includes("Crime")) requiredTypes.add("POLICE");
+      if (emergencyType.includes("Medical") || emergencyType.includes("Road")) requiredTypes.add("AMBULANCE");
+      checklist.forEach(c => {
+        const cl = c.toLowerCase();
+        if (cl.includes("fire") || cl.includes("smoke") || cl.includes("trapped")) requiredTypes.add("FIRE");
+        if (cl.includes("danger") || cl.includes("violence") || cl.includes("crime")) requiredTypes.add("POLICE");
+        if (cl.includes("injur") || cl.includes("unconscious") || cl.includes("accident")) requiredTypes.add("AMBULANCE");
+      });
+      if (requiredTypes.size === 0) requiredTypes.add("AMBULANCE");
+
       const payload = {
         emergency_type: mappedType,
+        requiredResponderTypes: Array.from(requiredTypes),
+        required_responder_types: Array.from(requiredTypes),
         description: description.trim() || `Reported via SOS Checklist: ${checklist.join(', ')}`, // Optional fallback
         voice_transcript: voiceOriginal || null,
         checklist,

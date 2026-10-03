@@ -143,9 +143,9 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
 
   const getStepIndex = (status) => {
     if (status === "Reported" || status === "Awaiting Responder") return 0;
-    if (status === "Assigned") return 1;
+    if (status === "Assigned" || status === "Partially Assigned") return 1;
     if (status === "En Route") return 2;
-    if (status === "On Scene") return 3;
+    if (status === "On Scene" || status === "Partially Resolved" || status === "In Progress") return 3;
     if (status === "Resolved") return 4;
     return 0;
   };
@@ -306,8 +306,14 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                         </span>
                       </div>
 
-                      <span className={`neon-badge ${inc.status === "Resolved" ? "neon-badge-resolved" : "neon-badge-critical"}`} style={{ fontSize: "0.64rem", padding: "2px 6px" }}>
-                        {inc.status}
+                      <span className={`neon-badge ${
+                        inc.status === "Resolved"
+                          ? "neon-badge-resolved"
+                          : inc.status === "Partially Resolved"
+                          ? "neon-badge-enroute"
+                          : "neon-badge-critical"
+                      }`} style={{ fontSize: "0.64rem", padding: "2px 6px" }}>
+                        {inc.status === "Partially Resolved" ? "Partially Resolved" : inc.status}
                       </span>
                     </div>
 
@@ -397,8 +403,16 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                     {activeIncident.id}
                   </span>
                   <span style={{ color: "#64748b" }}>•</span>
-                  <span style={{ fontSize: "0.78rem", fontWeight: "700", color: "#f8fafc" }}>
-                    {activeIncident.emergency_type}
+                  <span style={{
+                    fontSize: "0.78rem",
+                    fontWeight: "700",
+                    color: activeIncident.status === "Resolved" ? "#00ff88" : activeIncident.status === "Partially Resolved" ? "#00e5ff" : "#f8fafc"
+                  }}>
+                    {activeIncident.status === "Partially Resolved"
+                      ? "Emergency Partially Resolved"
+                      : activeIncident.status === "Resolved"
+                      ? "Emergency Resolved"
+                      : `${activeIncident.emergency_type} • ${activeIncident.status}`}
                   </span>
                 </div>
 
@@ -480,6 +494,134 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                   })}
                 </div>
               </div>
+
+              {/* Individual Responder Requirements Breakdown (Feature 1 & Status Display) */}
+              {activeIncident.responder_requirements && activeIncident.responder_requirements.length > 0 && (
+                <div style={{
+                  background: "rgba(15, 23, 42, 0.75)",
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  borderRadius: "12px",
+                  padding: "12px 14px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "6px" }}>
+                    <span style={{ fontSize: "0.78rem", fontWeight: "800", color: "#f8fafc", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                      Required Services ({activeIncident.responder_requirements.filter(r => ['ASSIGNED', 'EN_ROUTE', 'ON_SCENE', 'RESOLVED'].includes(r.status)).length}/{activeIncident.responder_requirements.length} Assigned)
+                    </span>
+                    {(() => {
+                      const resCount = activeIncident.responder_requirements.filter(r => r.status === 'RESOLVED' || r.status === 'Resolved').length;
+                      const totCount = activeIncident.responder_requirements.length;
+                      const isFullRes = activeIncident.status === "Resolved" || activeIncident.is_fully_resolved || (totCount > 0 && resCount === totCount);
+                      const isPartRes = activeIncident.status === "Partially Resolved" || resCount > 0;
+
+                      return (
+                        <span style={{
+                          fontSize: "0.68rem",
+                          fontWeight: "800",
+                          padding: "2px 8px",
+                          borderRadius: "6px",
+                          background: isFullRes ? "rgba(0, 255, 136, 0.2)" : isPartRes ? "rgba(0, 229, 255, 0.2)" : activeIncident.is_fully_assigned ? "rgba(0, 255, 136, 0.2)" : "rgba(255, 184, 0, 0.2)",
+                          color: isFullRes ? "#00ff88" : isPartRes ? "#00e5ff" : activeIncident.is_fully_assigned ? "#00ff88" : "#ffb800",
+                          border: `1px solid ${isFullRes ? '#00ff88' : isPartRes ? '#00e5ff' : activeIncident.is_fully_assigned ? '#00ff88' : '#ffb800'}40`
+                        }}>
+                          {isFullRes ? "Emergency Resolved ✓" : isPartRes ? `Partially Resolved (${resCount}/${totCount} Completed)` : activeIncident.is_fully_assigned ? "Fully Assigned ✓" : "Fulfillment In Progress..."}
+                        </span>
+                      );
+                    })()}
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {activeIncident.responder_requirements.map((req) => {
+                      const isResolved = req.status === "RESOLVED" || req.status === "Resolved";
+                      const isAssigned = req.status === "ASSIGNED" || req.status === "EN_ROUTE" || req.status === "ON_SCENE";
+                      const isNoResp = req.status === "NO_RESPONDER_AVAILABLE";
+                      const sColor = getServiceColor(req.service_type);
+
+                      return (
+                        <div
+                          key={req.responder_type}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            background: isResolved ? "rgba(0, 255, 136, 0.12)" : isAssigned ? "rgba(0, 229, 255, 0.08)" : isNoResp ? "rgba(255, 51, 75, 0.08)" : "rgba(30, 41, 59, 0.4)",
+                            border: `1px solid ${isResolved ? '#00ff88' : isAssigned ? '#00e5ff' : isNoResp ? '#ff334b' : sColor}35`,
+                            borderRadius: "8px",
+                            padding: "8px 10px"
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <div style={{ width: "26px", height: "26px", borderRadius: "6px", background: `${sColor}20`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {getServiceIcon(req.service_type)}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: "0.82rem", fontWeight: "800", color: "#f8fafc" }}>
+                                {req.service_type}
+                              </div>
+                              {req.assigned_responder && (
+                                <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+                                  {req.assigned_responder.full_name} ({req.assigned_responder.vehicle_number || "Unit"})
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {isResolved ? (
+                              <span style={{ fontSize: "0.75rem", fontWeight: "800", color: "#00ff88", display: "flex", alignItems: "center", gap: "4px" }}>
+                                <CheckCircle2 size={14} color="#00ff88" /> Resolved ✓
+                              </span>
+                            ) : req.status === "ON_SCENE" || req.status === "On Scene" ? (
+                              <span style={{ fontSize: "0.75rem", fontWeight: "800", color: "#ffb800", display: "flex", alignItems: "center", gap: "4px" }}>
+                                <Check size={14} /> On Scene
+                              </span>
+                            ) : req.status === "EN_ROUTE" || req.status === "En Route" ? (
+                              <span style={{ fontSize: "0.75rem", fontWeight: "800", color: "#00e5ff", display: "flex", alignItems: "center", gap: "4px" }}>
+                                <Navigation size={13} /> En Route
+                              </span>
+                            ) : isAssigned ? (
+                              <span style={{ fontSize: "0.75rem", fontWeight: "800", color: "#00e5ff", display: "flex", alignItems: "center", gap: "4px" }}>
+                                <Check size={14} /> Assigned ✓
+                              </span>
+                            ) : isNoResp ? (
+                              <span style={{ fontSize: "0.75rem", fontWeight: "700", color: "#ff334b", display: "flex", alignItems: "center", gap: "4px" }}>
+                                <AlertTriangle size={13} /> No responder available
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: "0.75rem", fontWeight: "700", color: "#00e5ff", display: "flex", alignItems: "center", gap: "4px" }}>
+                                <Clock size={13} className="animate-spin" /> Searching...
+                              </span>
+                            )}
+
+                            {req.assigned_responder?.phone && (
+                              <a
+                                href={`tel:${req.assigned_responder.phone}`}
+                                onClick={() => sounds.playTap()}
+                                style={{
+                                  background: "linear-gradient(135deg, #00ff88, #059669)",
+                                  color: "#070a12",
+                                  padding: "4px 8px",
+                                  borderRadius: "6px",
+                                  fontSize: "0.72rem",
+                                  fontWeight: "800",
+                                  textDecoration: "none",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "3px"
+                                }}
+                              >
+                                <Phone size={11} /> Call
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Responder Information or 5-Min Escalation Alert */}
               {activeIncident.assigned_responder ? (

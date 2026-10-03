@@ -185,6 +185,31 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_requests_responder ON incident_responder_requests(responder_id);
   `);
 
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS incident_required_responder_types (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      incident_id TEXT NOT NULL,
+      responder_type TEXT NOT NULL, -- 'POLICE', 'AMBULANCE', 'FIRE'
+      status TEXT NOT NULL DEFAULT 'SEARCHING', -- 'SEARCHING', 'ASSIGNED', 'NO_RESPONDER_AVAILABLE'
+      assigned_responder_id INTEGER,
+      assigned_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (incident_id) REFERENCES incidents(id),
+      FOREIGN KEY (assigned_responder_id) REFERENCES responders(id),
+      UNIQUE(incident_id, responder_type)
+    )
+  `);
+
+  await dbRun(`
+    CREATE INDEX IF NOT EXISTS idx_required_responder_types_inc ON incident_required_responder_types(incident_id);
+  `);
+
+  try {
+    await dbRun(`ALTER TABLE incidents ADD COLUMN required_responder_types_json TEXT DEFAULT '[]'`);
+  } catch (e) {
+    // Column already exists
+  }
+
   console.log("SQLite schema initialized successfully.");
 }
 
