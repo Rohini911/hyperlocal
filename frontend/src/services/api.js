@@ -92,11 +92,12 @@ export const deduplicateUsers = (list) => {
 // Auto-clean storage on script initialization
 export const removeDuplicateData = () => {
   try {
-    // 1. Clean incidents
+    // 1. Clean incidents & filter out old static demo incidents
     const rawIncidents = localStorage.getItem("app_incidents");
     if (rawIncidents) {
       const parsed = JSON.parse(rawIncidents);
-      const clean = deduplicateIncidents(parsed);
+      const filtered = Array.isArray(parsed) ? parsed.filter(i => i && i.id !== 'INC-2026-1049' && i.id !== 'INC-2026-1032') : [];
+      const clean = deduplicateIncidents(filtered);
       localStorage.setItem("app_incidents", JSON.stringify(clean));
     }
 

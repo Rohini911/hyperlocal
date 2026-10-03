@@ -761,9 +761,13 @@ io.on('connection', (socket) => {
 });
 
 // ================= DATABASE DEDUPLICATION ROUTINE =================
-async function cleanDatabaseDuplicates() {
-  try {
-    // 1. Remove duplicate incidents with identical IDs
+    // 1. Remove static demo incidents (INC-2026-1049, INC-2026-1032, etc.)
+    await dbRun(`
+      DELETE FROM incidents 
+      WHERE id IN ('INC-2026-1049', 'INC-2026-1032')
+    `);
+
+    // 2. Remove duplicate incidents with identical IDs
     await dbRun(`
       DELETE FROM incidents 
       WHERE rowid NOT IN (
@@ -773,7 +777,7 @@ async function cleanDatabaseDuplicates() {
       )
     `);
 
-    // 2. Remove duplicate users with identical emails
+    // 3. Remove duplicate users with identical emails
     await dbRun(`
       DELETE FROM users 
       WHERE rowid NOT IN (
@@ -783,7 +787,7 @@ async function cleanDatabaseDuplicates() {
       )
     `);
 
-    // 3. Remove duplicate contacts
+    // 4. Remove duplicate contacts
     await dbRun(`
       DELETE FROM contacts 
       WHERE rowid NOT IN (
@@ -793,7 +797,7 @@ async function cleanDatabaseDuplicates() {
       )
     `);
 
-    console.log("🧹 SQLite database duplicates cleaned successfully.");
+    console.log("🧹 SQLite database duplicates and static demo data cleaned successfully.");
   } catch (e) {
     console.warn("Deduplication warning:", e.message);
   }
