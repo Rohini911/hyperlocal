@@ -121,6 +121,22 @@ class SoundManager {
       this.triggerHaptic([120, 80, 120]);
     } catch (e) {}
   }
+
+  showSystemNotification(title, body) {
+    try {
+      if (typeof window !== "undefined" && "Notification" in window) {
+        if (Notification.permission === "granted") {
+          new Notification(title, { body, icon: "/vite.svg" });
+        } else if (Notification.permission !== "denied") {
+          Notification.requestPermission().then((perm) => {
+            if (perm === "granted") {
+              new Notification(title, { body, icon: "/vite.svg" });
+            }
+          });
+        }
+      }
+    } catch (e) {}
+  }
 }
 
 export const sounds = new SoundManager();

@@ -56,11 +56,15 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       sounds.playSuccess();
       const inc = data.incident || data;
       const resp = data.responder || inc.assigned_responder;
+      const respName = resp?.full_name || "Emergency Officer";
+      const sType = resp?.service_type || inc.suggested_service || "Responder";
       
+      sounds.showSystemNotification("🚨 Emergency Unit Accepted!", `${respName} (${sType}) has accepted your emergency report and is en route!`);
+
       setAcceptanceToast({
         title: "🚨 Emergency Unit Accepted!",
-        message: `${resp?.full_name || "Official Unit"} (${resp?.service_type || "Responder"}) accepted your report. Unit is en route!`,
-        service: resp?.service_type || inc.suggested_service
+        message: `${respName} (${sType}) accepted your report. Unit is en route!`,
+        service: sType
       });
 
       if (inc && inc.id) {

@@ -42,6 +42,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     // 1. Direct 5-Minute Escalation incoming job alert
     socket.on("incoming_job_alert", (data) => {
       sounds.playAlertSiren();
+      sounds.showSystemNotification("🚨 Incoming Emergency Dispatch!", `Incident ${data.incidentId} matches your ${serviceType} unit.`);
       setIncomingAlert(data);
       setCountdown(data.timeoutSeconds || 300);
     });
@@ -61,6 +62,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
         (serviceType === "Fire" && (newInc.emergency_type === "Fire"));
 
       if (matchesService) {
+        sounds.showSystemNotification("🚨 New Emergency SOS Reported!", `${newInc.emergency_type} incident reported at ${newInc.address || "GPS location"}`);
         setIncomingAlert({
           incidentId: newInc.id,
           incident: newInc,
