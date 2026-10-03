@@ -181,11 +181,68 @@ async function findRankedResponders(serviceType, incidentLat, incidentLng, maxRa
   return ranked;
 }
 
+/**
+ * Hyperlocal Emergency Responder Finder:
+ * Finds ALL eligible registered responders within the configured geographic radius.
+ * CRITICAL RULE: NO ARTIFICIAL LIMIT (No top 5, no max 5).
+ * Filters strictly by:
+ * 1. Registered account (exists in DB)
+ * 2. Correct service_type matching emergency requirement
+ * 3. Verified account (is_verified = 1)
+ * 4. Currently available (is_available = 1)
+ * 5. Not already assigned to another active incident (current_incident_id is NULL)
+ * 6. Valid current latitude and longitude
+ * 7. Geographically within radiusKm
+ */
+async function findEligibleNearbyResponders(serviceType, incidentLat, incidentLng, radiusKm = 5.0) {
+  if (incidentLat === null || incidentLat === undefined || isNaN(incidentLat) ||
+      incidentLng === null || incidentLng === undefined || isNaN(incidentLng)) {
+    return [];
+  }
+
+  const responders = await dbAll(
+    `SELECT r.*, u.full_name, u.phone, u.email
+     FROM responders r
+     JOIN users u ON r.user_id = u.id
+     WHERE r.service_type = ?
+       AND r.is_verified = 1
+       AND r.is_available = 1
+       AND (r.current_incident_id IS NULL OR r.current_incident_id = '')`,
+    [serviceType]
+  );
+
+  const eligible = [];
+  for (const resp of responders) {
+    // Validate responder location
+    if (resp.lat === null || resp.lat === undefined || isNaN(resp.lat) ||
+        resp.lng === null || resp.lng === undefined || isNaN(resp.lng)) {
+      continue;
+    }
+
+    const dist = calculateHaversineDistance(incidentLat, incidentLng, resp.lat, resp.lng);
+    if (dist.km <= radiusKm) {
+      const eta = estimateTravelTime(dist.km);
+      eligible.push({
+        ...resp,
+        distance_km: dist.km,
+        distance_meters: dist.meters,
+        eta_minutes: eta.minutes,
+        eta_seconds: eta.seconds
+      });
+    }
+  }
+
+  // Sort by proximity ascending, returning ALL eligible without any cap
+  eligible.sort((a, b) => a.distance_km - b.distance_km);
+  return eligible;
+}
+
 module.exports = {
   calculateHaversineDistance,
   estimateTravelTime,
   fetchOsrmRoute,
   checkDuplicateIncident,
   classifyEmergencyAndSeverity,
-  findRankedResponders
+  findRankedResponders,
+  findEligibleNearbyResponders
 };

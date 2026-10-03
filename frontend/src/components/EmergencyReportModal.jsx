@@ -156,7 +156,7 @@ export default function EmergencyReportModal({ isOpen, onClose, onSuccess }) {
               Emergency SOS Dispatched!
             </h3>
             <p style={{ color: "#64748b", fontSize: "0.95rem", marginBottom: "20px" }}>
-              Alert broadcasted to the <strong>nearest 5 online {createdIncident.suggested_service || "Emergency"} services</strong> with a 5-minute accept window.
+              Alert broadcasted to <strong>all eligible nearby {createdIncident.suggested_service || "Emergency"} responders</strong> within configured radius. First acceptance wins.
             </p>
 
             <div className="story-card" style={{ maxWidth: "420px", margin: "0 auto 24px auto", padding: "20px", textAlign: "left", background: "#f8fafc" }}>

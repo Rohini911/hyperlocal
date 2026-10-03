@@ -161,6 +161,30 @@ async function initDB() {
     )
   `);
 
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS incident_responder_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      incident_id TEXT NOT NULL,
+      responder_id INTEGER NOT NULL,
+      responder_type TEXT NOT NULL,
+      distance_km REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING', -- 'PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'REJECTED_BY_ASSIGNMENT'
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      responded_at DATETIME,
+      expires_at DATETIME,
+      FOREIGN KEY (incident_id) REFERENCES incidents(id),
+      FOREIGN KEY (responder_id) REFERENCES responders(id),
+      UNIQUE(incident_id, responder_id)
+    )
+  `);
+
+  await dbRun(`
+    CREATE INDEX IF NOT EXISTS idx_requests_incident ON incident_responder_requests(incident_id);
+  `);
+  await dbRun(`
+    CREATE INDEX IF NOT EXISTS idx_requests_responder ON incident_responder_requests(responder_id);
+  `);
+
   console.log("SQLite schema initialized successfully.");
 }
 

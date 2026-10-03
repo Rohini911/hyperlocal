@@ -62,15 +62,27 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       setResponderLiveLoc({ lat: data.lat, lng: data.lng });
     };
 
+    const handleAssignmentNotice = (data) => {
+      loadIncidents();
+    };
+
+    const handleNoResponders = (data) => {
+      loadIncidents();
+    };
+
     socket.on("incident_created", handleCreated);
     socket.on("incident_status_changed", handleStatusChanged);
     socket.on("incident_updated", handleUpdated);
+    socket.on("citizen_assignment_notification", handleAssignmentNotice);
+    socket.on("no_responders_alert", handleNoResponders);
     socket.on("responder_gps_update", handleGps);
 
     return () => {
       socket.off("incident_created", handleCreated);
       socket.off("incident_status_changed", handleStatusChanged);
       socket.off("incident_updated", handleUpdated);
+      socket.off("citizen_assignment_notification", handleAssignmentNotice);
+      socket.off("no_responders_alert", handleNoResponders);
       socket.off("responder_gps_update", handleGps);
     };
   }, []); // Run ONCE on mount
@@ -349,12 +361,62 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                   <Phone size={15} /> Call Responder
                 </a>
               </div>
+            ) : activeIncident.status === "NO_RESPONDER_AVAILABLE" ? (
+              <div style={{ background: "rgba(239, 68, 68, 0.15)", border: "1.5px solid #ef4444", padding: "16px", borderRadius: "10px", color: "#fca5a5", fontSize: "0.88rem", display: "flex", flexDirection: "column", gap: "10px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <AlertOctagon size={22} color="#ef4444" />
+                  <div style={{ fontWeight: "800", color: "#f8fafc", fontSize: "1rem" }}>
+                    No Nearby Registered Responders Available
+                  </div>
+                </div>
+                <div style={{ fontSize: "0.82rem", color: "#e2e8f0" }}>
+                  No nearby verified {activeIncident.suggested_service} unit was able to accept your emergency at this time. Please call the emergency helpline directly.
+                </div>
+                <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
+                  <a
+                    href="tel:112"
+                    style={{
+                      background: "#ef4444",
+                      color: "white",
+                      padding: "8px 16px",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                      fontWeight: "800",
+                      textDecoration: "none",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px"
+                    }}
+                  >
+                    <Phone size={15} /> Dial 112 National SOS
+                  </a>
+                  <a
+                    href="tel:108"
+                    style={{
+                      background: "rgba(255,255,255,0.1)",
+                      color: "#f8fafc",
+                      padding: "8px 16px",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                      fontWeight: "700",
+                      textDecoration: "none",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px"
+                    }}
+                  >
+                    <Phone size={15} /> Dial 108 Ambulance
+                  </a>
+                </div>
+              </div>
             ) : (
               <div style={{ background: "rgba(255, 184, 0, 0.12)", border: "1px solid rgba(255, 184, 0, 0.3)", padding: "14px", borderRadius: "10px", color: "#ffb800", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "10px" }}>
                 <Clock size={20} className="animate-spin" />
                 <div>
-                  <div style={{ fontWeight: "700" }}>Awaiting Responder Acceptance (5-Minute Alert Active)</div>
-                  <div style={{ fontSize: "0.78rem", color: "#cbd5e1" }}>Alert sent to nearest 5 {activeIncident.suggested_service} responders. Escalates if unaccepted.</div>
+                  <div style={{ fontWeight: "700" }}>Contacting Nearby Eligible Responders</div>
+                  <div style={{ fontSize: "0.78rem", color: "#cbd5e1" }}>
+                    Alert broadcasted to all eligible nearby {activeIncident.suggested_service} units within configured radius. First acceptance wins.
+                  </div>
                 </div>
               </div>
             )}

@@ -42,6 +42,11 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
       setIncomingAlert(null);
     });
 
+    socket.on("job_assigned_to_other", (data) => {
+      setIncomingAlert(null);
+      loadIncidents();
+    });
+
     socket.on("incident_status_changed", () => {
       loadIncidents();
     });
@@ -49,6 +54,7 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     return () => {
       socket.off("incoming_job_alert");
       socket.off("job_offer_expired");
+      socket.off("job_assigned_to_other");
       socket.off("incident_status_changed");
     };
   }, [currentUser]);
@@ -192,17 +198,22 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
             <div style={{ fontSize: "1.8rem", fontWeight: "900", color: "#ff334b", fontFamily: "monospace", marginBottom: "4px" }}>
               {Math.floor(countdown / 60).toString().padStart(2, '0')}:{(countdown % 60).toString().padStart(2, '0')}
             </div>
-            <div style={{ fontSize: "0.72rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "14px" }}>
-              5-Minute Escalation Window • Batch {incomingAlert.batchNumber || 1}
+            <div style={{ fontSize: "0.72rem", color: "#00e5ff", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "14px", fontWeight: "700" }}>
+              Hyperlocal Radius Alert ({incomingAlert.radiusKm || 5} km Sector) • First Acceptance Wins
             </div>
 
             <h3 style={{ fontSize: "1.3rem", fontWeight: "800", color: "#f8fafc", marginBottom: "6px" }}>
-              Emergency Incident Alert
+              {incomingAlert.emergencyType || "Emergency"} Incident Alert
             </h3>
-            <p style={{ color: "#94a3b8", fontSize: "0.88rem", marginBottom: "20px" }}>
-              Incident <strong>{incomingAlert.incidentId}</strong> matches your <strong>{serviceType}</strong> service.
+            <p style={{ color: "#94a3b8", fontSize: "0.88rem", marginBottom: "8px" }}>
+              Incident <strong>{incomingAlert.incidentId}</strong> • Severity: <span style={{ color: incomingAlert.severity === 'Critical' ? '#ff334b' : '#ffb800', fontWeight: 'bold' }}>{incomingAlert.severity || 'Critical'}</span>
               <br />Est. Distance: <strong>{incomingAlert.distanceKm} km</strong> (~{incomingAlert.etaMinutes} mins)
             </p>
+            {incomingAlert.shortDescription && (
+              <p style={{ color: "#cbd5e1", fontSize: "0.82rem", background: "rgba(255,255,255,0.05)", padding: "8px 12px", borderRadius: "6px", marginBottom: "16px" }}>
+                "{incomingAlert.shortDescription}"
+              </p>
+            )}
 
             <div style={{ display: "flex", gap: "10px" }}>
               <button

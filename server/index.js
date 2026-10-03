@@ -15,7 +15,8 @@ const {
   fetchOsrmRoute,
   checkDuplicateIncident,
   classifyEmergencyAndSeverity,
-  findRankedResponders
+  findRankedResponders,
+  findEligibleNearbyResponders
 } = require('./ruleEngine');
 
 const app = express();
@@ -30,16 +31,38 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = 'hyperlocal-secret-key-socket-2026';
 
+// Configurable Hyperlocal Responder Parameters
+const NEARBY_RESPONDER_RADIUS_KM = parseFloat(process.env.NEARBY_RESPONDER_RADIUS_KM || '5.0');
+const EXPANDED_RADIUS_KM = parseFloat(process.env.EXPANDED_RADIUS_KM || '10.0');
+const RESPONDER_REQUEST_TIMEOUT_SECONDS = parseInt(process.env.RESPONDER_REQUEST_TIMEOUT_SECONDS || '120', 10);
+const ENABLE_RADIUS_EXPANSION = process.env.ENABLE_RADIUS_EXPANSION !== 'false';
+
 app.use(cors());
 app.use(express.json());
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString(), platform: 'Hyperlocal Emergency Response' });
+  res.json({
+    status: 'ok',
+    time: new Date().toISOString(),
+    platform: 'Hyperlocal Emergency Response',
+    config: {
+      nearbyRadiusKm: NEARBY_RESPONDER_RADIUS_KM,
+      expandedRadiusKm: EXPANDED_RADIUS_KM,
+      timeoutSeconds: RESPONDER_REQUEST_TIMEOUT_SECONDS
+    }
+  });
 });
 
-// In-memory registry of active dispatch countdown timers
-const activeDispatchBatches = new Map(); // incidentId -> { timer, batchIndex, rankedResponders, currentBatch, expiresAt }
-const activeDispatchTimers = activeDispatchBatches;
+// In-memory registry of active dispatch countdown timers: incidentId -> timeout timer
+const activeDispatchTimers = new Map();
+
+function clearIncidentTimer(incidentId) {
+  if (activeDispatchTimers.has(incidentId)) {
+    clearTimeout(activeDispatchTimers.get(incidentId));
+    activeDispatchTimers.delete(incidentId);
+  }
+}
+const clearDispatchTimer = clearIncidentTimer; // backward-compatibility alias
 
 // ================= AUTH MIDDLEWARE =================
 function authenticateToken(req, res, next) {
@@ -84,63 +107,148 @@ async function logAudit(userId, userName, action, incidentId, details, req) {
   }
 }
 
-// ================= REAL-TIME 5-SERVICE DISPATCH BATCH & 5-MIN TIMEOUT =================
-async function dispatchBatchToResponders(incidentId, rankedResponders, batchSize = 5, batchIndex = 0, timeoutSeconds = 300) {
-  const startIndex = batchIndex * batchSize;
-  const currentBatch = rankedResponders.slice(startIndex, startIndex + batchSize);
+// ================= HYPERLOCAL RESPONDER ALERT & REQUEST ENGINE =================
+/**
+ * Alerts ALL eligible registered responders within the configured radius.
+ * CRITICAL RULE: NO ARTIFICIAL LIMIT (No nearest 5, no max 5).
+ * If 2 within radius -> alert 2.
+ * If 7 within radius -> alert 7.
+ * If 20 within radius -> alert 20.
+ * If 0 within radius -> optional 1-step expansion to 10km, or NO_RESPONDER_AVAILABLE.
+ */
+async function alertAllEligibleNearbyResponders(incidentId, requiredService, incidentLat, incidentLng, incidentDetails = {}) {
+  clearIncidentTimer(incidentId);
 
-  if (currentBatch.length === 0) {
-    console.log(`[Escalation] All nearby service batches exhausted for incident ${incidentId}. Escalating to supervisor...`);
-    io.to('dispatch_room').emit('supervisor_escalation_alert', {
-      incidentId,
-      message: `🚨 ESCALATION: No services accepted incident ${incidentId} after multiple 5-minute batch alerts. Supervisor manual dispatch required.`
-    });
-    return;
+  // 1. Primary search within configured radius (default 5 km)
+  let radiusUsed = NEARBY_RESPONDER_RADIUS_KM;
+  let eligibleResponders = await findEligibleNearbyResponders(requiredService, incidentLat, incidentLng, radiusUsed);
+
+  // 2. Controlled 1-step radius fallback if 0 responders found initially
+  if (eligibleResponders.length === 0 && ENABLE_RADIUS_EXPANSION && EXPANDED_RADIUS_KM > NEARBY_RESPONDER_RADIUS_KM) {
+    console.log(`[Hyperlocal Dispatch] No ${requiredService} responders within ${NEARBY_RESPONDER_RADIUS_KM}km for ${incidentId}. Expanding to fallback radius ${EXPANDED_RADIUS_KM}km...`);
+    radiusUsed = EXPANDED_RADIUS_KM;
+    eligibleResponders = await findEligibleNearbyResponders(requiredService, incidentLat, incidentLng, radiusUsed);
   }
 
-  console.log(`[Dispatch Batch ${batchIndex + 1}] Alerting top ${currentBatch.length} nearby services for incident ${incidentId} (5-minute countdown started)`);
+  // 3. If still NO eligible responders available
+  if (eligibleResponders.length === 0) {
+    console.log(`[Hyperlocal Dispatch] 0 eligible ${requiredService} responders found within ${radiusUsed}km for incident ${incidentId}. Setting status to NO_RESPONDER_AVAILABLE.`);
 
-  const expiresAt = Date.now() + timeoutSeconds * 1000;
+    await dbRun(
+      `UPDATE incidents SET status = 'NO_RESPONDER_AVAILABLE', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND assigned_responder_id IS NULL`,
+      [incidentId]
+    );
 
-  // Alert all responders in current batch of 5
-  currentBatch.forEach((responder) => {
+    const noRespMsg = `No nearby registered ${requiredService} responder is currently available for your emergency. Please contact emergency services directly (112 / 108).`;
+    await dbRun(
+      `INSERT INTO incident_updates (incident_id, status, note, updated_by_name)
+       VALUES (?, 'NO_RESPONDER_AVAILABLE', ?, 'System')`,
+      [incidentId, noRespMsg]
+    );
+
+    const updated = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
+    if (updated) {
+      updated.checklist = JSON.parse(updated.checklist_json || '[]');
+    }
+
+    io.to(`incident_${incidentId}`).emit('incident_status_changed', { incident: updated, note: noRespMsg });
+    io.to(`incident_${incidentId}`).emit('no_responders_alert', { incidentId, message: noRespMsg });
+    io.to('dispatch_room').emit('incident_status_changed', { incident: updated });
+    return { alertedCount: 0, status: 'NO_RESPONDER_AVAILABLE', radiusUsed };
+  }
+
+  console.log(`[Hyperlocal Dispatch] Alerting ALL ${eligibleResponders.length} eligible ${requiredService} responders within ${radiusUsed}km for incident ${incidentId} (NO fixed limit applied)`);
+
+  const expiresAt = new Date(Date.now() + RESPONDER_REQUEST_TIMEOUT_SECONDS * 1000).toISOString();
+
+  // 4. Create request records and broadcast alert to EVERY eligible responder
+  for (const responder of eligibleResponders) {
+    // Record request in database
+    await dbRun(
+      `INSERT INTO incident_responder_requests
+       (incident_id, responder_id, responder_type, distance_km, status, expires_at)
+       VALUES (?, ?, ?, ?, 'PENDING', ?)`,
+      [incidentId, responder.id, responder.service_type, responder.distance_km, expiresAt]
+    );
+
+    // Alert responder via socket room
     io.to(`responder_${responder.id}`).emit('incoming_job_alert', {
       incidentId,
-      timeoutSeconds,
-      expiresAt,
-      batchNumber: batchIndex + 1,
-      totalInBatch: currentBatch.length,
+      emergencyType: incidentDetails.emergency_type || 'Emergency',
+      severity: incidentDetails.severity || 'Critical',
+      shortDescription: incidentDetails.description || '',
+      incidentLocation: {
+        lat: incidentLat,
+        lng: incidentLng,
+        address: incidentDetails.address || 'GPS Location'
+      },
       distanceKm: responder.distance_km,
-      etaMinutes: responder.eta_minutes
+      etaMinutes: responder.eta_minutes,
+      reportTime: incidentDetails.created_at || new Date().toISOString(),
+      timeoutSeconds: RESPONDER_REQUEST_TIMEOUT_SECONDS,
+      expiresAt,
+      radiusKm: radiusUsed,
+      totalAlerted: eligibleResponders.length
     });
-  });
-
-  // 5-minute timeout timer (300 seconds)
-  const timer = setTimeout(async () => {
-    console.log(`[Timeout] 5 minutes expired for Batch ${batchIndex + 1} on incident ${incidentId}. Rotating to next 5 nearby services...`);
-    
-    currentBatch.forEach((responder) => {
-      io.to(`responder_${responder.id}`).emit('job_offer_expired', { incidentId });
-    });
-
-    dispatchBatchToResponders(incidentId, rankedResponders, batchSize, batchIndex + 1, timeoutSeconds);
-  }, timeoutSeconds * 1000);
-
-  activeDispatchBatches.set(incidentId, {
-    timer,
-    batchIndex,
-    rankedResponders,
-    currentBatch,
-    expiresAt
-  });
-}
-
-function clearDispatchTimer(incidentId) {
-  if (activeDispatchBatches.has(incidentId)) {
-    const { timer } = activeDispatchBatches.get(incidentId);
-    clearTimeout(timer);
-    activeDispatchBatches.delete(incidentId);
   }
+
+  // Notify citizen that nearby responders are being contacted
+  const searchMsg = `Contacting ${eligibleResponders.length} nearby eligible ${requiredService} responder(s) within ${radiusUsed}km. Awaiting acceptance...`;
+  io.to(`incident_${incidentId}`).emit('incident_searching_responders', {
+    incidentId,
+    message: searchMsg,
+    totalAlerted: eligibleResponders.length,
+    radiusKm: radiusUsed
+  });
+
+  // 5. Expiration timer: mark PENDING requests EXPIRED after timeout
+  const timer = setTimeout(async () => {
+    try {
+      console.log(`[Hyperlocal Dispatch] Request timeout (${RESPONDER_REQUEST_TIMEOUT_SECONDS}s) reached for incident ${incidentId}.`);
+
+      // Expire any requests still in PENDING state
+      await dbRun(
+        `UPDATE incident_responder_requests
+         SET status = 'EXPIRED', responded_at = CURRENT_TIMESTAMP
+         WHERE incident_id = ? AND status = 'PENDING'`,
+        [incidentId]
+      );
+
+      // Notify alerted responders of expiration
+      for (const responder of eligibleResponders) {
+        io.to(`responder_${responder.id}`).emit('job_offer_expired', { incidentId });
+      }
+
+      // Check if incident is still unassigned
+      const inc = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
+      if (inc && !inc.assigned_responder_id && inc.status !== 'Resolved' && inc.status !== 'Cancelled') {
+        await dbRun(
+          `UPDATE incidents SET status = 'NO_RESPONDER_AVAILABLE', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND assigned_responder_id IS NULL`,
+          [incidentId]
+        );
+
+        const expMsg = 'No nearby responders accepted the alert within the response window. Please contact emergency services (112).';
+        await dbRun(
+          `INSERT INTO incident_updates (incident_id, status, note, updated_by_name)
+           VALUES (?, 'NO_RESPONDER_AVAILABLE', ?, 'System')`,
+          [incidentId, expMsg]
+        );
+
+        const updated = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
+        if (updated) {
+          updated.checklist = JSON.parse(updated.checklist_json || '[]');
+        }
+        io.to(`incident_${incidentId}`).emit('incident_status_changed', { incident: updated, note: expMsg });
+        io.to(`incident_${incidentId}`).emit('no_responders_alert', { incidentId, message: expMsg });
+        io.to('dispatch_room').emit('incident_status_changed', { incident: updated });
+      }
+    } catch (e) {
+      console.error('Error handling dispatch expiration:', e);
+    }
+  }, RESPONDER_REQUEST_TIMEOUT_SECONDS * 1000);
+
+  activeDispatchTimers.set(incidentId, timer);
+  return { alertedCount: eligibleResponders.length, status: 'ALERTED', radiusUsed };
 }
 
 // ================= AUTH ROUTES =================
@@ -354,17 +462,15 @@ app.post('/api/incidents', authenticateToken, async (req, res) => {
     // Real-time broadcast
     io.emit('incident_created', createdIncident);
 
-    // 3. Auto-Dispatch: Find ranked available responders
+    // 3. Auto-Dispatch: Alert ALL eligible nearby responders within configured radius (NO fixed limit)
     if (!dupCheck.isDuplicate) {
-      const rankedResponders = await findRankedResponders(classification.suggested_service, lat, lng, 20.0);
-      if (rankedResponders.length > 0) {
-        dispatchBatchToResponders(incidentId, rankedResponders, 5, 0, 300);
-      } else {
-        io.to('dispatch_room').emit('no_responders_alert', {
-          incidentId,
-          message: `⚠️ No ${classification.suggested_service} units currently available within 20km for incident ${incidentId}.`
-        });
-      }
+      await alertAllEligibleNearbyResponders(
+        incidentId,
+        classification.suggested_service,
+        lat,
+        lng,
+        createdIncident
+      );
     }
 
     res.json({
@@ -423,6 +529,18 @@ app.get('/api/incidents/:id', authenticateToken, async (req, res) => {
       incident.assigned_responder = resp;
     }
 
+    // Responder requests for this incident
+    const requests = await dbAll(
+      `SELECT req.*, r.vehicle_number, r.organization_name, u.full_name, u.phone
+       FROM incident_responder_requests req
+       JOIN responders r ON req.responder_id = r.id
+       JOIN users u ON r.user_id = u.id
+       WHERE req.incident_id = ?
+       ORDER BY req.distance_km ASC`,
+      [incident.id]
+    );
+    incident.requests = requests;
+
     // Chat history
     const chats = await dbAll('SELECT * FROM incident_chats WHERE incident_id = ? ORDER BY created_at ASC', [incident.id]);
     incident.chats = chats;
@@ -433,10 +551,32 @@ app.get('/api/incidents/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Responder Accept / Decline Assignment
+// Get Responder Requests for Incident
+app.get('/api/incidents/:id/requests', authenticateToken, async (req, res) => {
+  try {
+    const requests = await dbAll(
+      `SELECT req.*, r.vehicle_number, r.organization_name, u.full_name, u.phone
+       FROM incident_responder_requests req
+       JOIN responders r ON req.responder_id = r.id
+       JOIN users u ON r.user_id = u.id
+       WHERE req.incident_id = ?
+       ORDER BY req.distance_km ASC`,
+      [req.params.id]
+    );
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Responder Accept / Decline Assignment (FIRST ACCEPTANCE WINS WITH ATOMIC CONCURRENCY PROTECTION)
 app.post('/api/incidents/:id/assign', authenticateToken, async (req, res) => {
   const { action } = req.body; // 'accept' or 'decline'
   const incidentId = req.params.id;
+
+  if (action !== 'accept' && action !== 'decline') {
+    return res.status(400).json({ error: "Invalid action. Must be 'accept' or 'decline'." });
+  }
 
   try {
     const incident = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
@@ -445,48 +585,168 @@ app.post('/api/incidents/:id/assign', authenticateToken, async (req, res) => {
     const responder = await dbGet('SELECT * FROM responders WHERE user_id = ?', [req.user.id]);
     if (!responder) return res.status(403).json({ error: 'User is not a registered responder' });
 
+    // Look up this responder's request record
+    const reqRecord = await dbGet(
+      'SELECT * FROM incident_responder_requests WHERE incident_id = ? AND responder_id = ?',
+      [incidentId, responder.id]
+    );
+
+    if (!reqRecord) {
+      return res.status(403).json({ error: 'You are not an alerted responder for this incident.' });
+    }
+
     if (action === 'accept') {
-      // Prevent race conditions
-      if (incident.assigned_responder_id && incident.assigned_responder_id !== responder.id) {
-        return res.status(409).json({ error: 'Incident has already been accepted by another responder.' });
+      // 1. Verify request is still in PENDING status
+      if (reqRecord.status === 'EXPIRED') {
+        return res.status(410).json({ error: 'Your request for this emergency has expired.' });
+      }
+      if (reqRecord.status === 'DECLINED') {
+        return res.status(400).json({ error: 'You previously declined this emergency.' });
+      }
+      if (reqRecord.status === 'REJECTED_BY_ASSIGNMENT') {
+        return res.status(409).json({ error: 'Another responder has already accepted this emergency.' });
       }
 
-      clearDispatchTimer(incidentId);
+      // 2. Check responder current availability
+      if (responder.is_available === 0 || responder.current_incident_id) {
+        return res.status(400).json({ error: 'You are currently unavailable or already assigned to another incident.' });
+      }
 
-      await dbRun(
-        `UPDATE incidents 
-         SET assigned_responder_id = ?, status = 'Assigned', updated_at = CURRENT_TIMESTAMP 
-         WHERE id = ?`,
+      // 3. FIRST ACCEPTANCE WINS — ATOMIC BACKEND/DATABASE UPDATE
+      // The update succeeds ONLY if assigned_responder_id IS NULL and incident is in an assignable state
+      const assignResult = await dbRun(
+        `UPDATE incidents
+         SET assigned_responder_id = ?, status = 'Assigned', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?
+           AND assigned_responder_id IS NULL
+           AND status NOT IN ('Resolved', 'Cancelled', 'Merged')`,
         [responder.id, incidentId]
       );
 
+      // Concurrency protection: If changes === 0, another responder won the race at the same moment!
+      if (assignResult.changes === 0) {
+        // Mark this responder's request as REJECTED_BY_ASSIGNMENT
+        await dbRun(
+          `UPDATE incident_responder_requests
+           SET status = 'REJECTED_BY_ASSIGNMENT', responded_at = CURRENT_TIMESTAMP
+           WHERE incident_id = ? AND responder_id = ?`,
+          [incidentId, responder.id]
+        );
+        return res.status(409).json({ error: 'Another responder has already accepted this emergency.' });
+      }
+
+      // WINNER: Clear expiration timer
+      clearIncidentTimer(incidentId);
+
+      // Mark winning responder's request as ACCEPTED
       await dbRun(
-        `UPDATE responders SET current_incident_id = ? WHERE id = ?`,
+        `UPDATE incident_responder_requests
+         SET status = 'ACCEPTED', responded_at = CURRENT_TIMESTAMP
+         WHERE incident_id = ? AND responder_id = ?`,
         [incidentId, responder.id]
       );
 
+      // REJECT ALL OTHER PENDING REQUESTS FOR THIS INCIDENT
+      await dbRun(
+        `UPDATE incident_responder_requests
+         SET status = 'REJECTED_BY_ASSIGNMENT', responded_at = CURRENT_TIMESTAMP
+         WHERE incident_id = ? AND responder_id != ? AND status = 'PENDING'`,
+        [incidentId, responder.id]
+      );
+
+      // Update responder status: mark busy and link current incident
+      await dbRun(
+        `UPDATE responders SET is_available = 0, current_incident_id = ? WHERE id = ?`,
+        [incidentId, responder.id]
+      );
+
+      // Add timeline update
+      const acceptMsg = `Help is on the way. A nearby responder (${req.user.full_name}, ${responder.organization_name || responder.service_type}) has accepted your emergency request.`;
       await dbRun(
         `INSERT INTO incident_updates (incident_id, status, note, updated_by_name, lat, lng)
          VALUES (?, 'Assigned', ?, ?, ?, ?)`,
-        [incidentId, `Accepted by ${req.user.full_name} (${responder.organization_name})`, req.user.full_name, responder.lat, responder.lng]
+        [incidentId, acceptMsg, req.user.full_name, responder.lat, responder.lng]
       );
 
-      await logAudit(req.user.id, req.user.full_name, 'ACCEPT_ASSIGNMENT', incidentId, `Accepted assignment`, req);
+      await logAudit(req.user.id, req.user.full_name, 'ACCEPT_ASSIGNMENT', incidentId, `Accepted emergency assignment`, req);
 
+      // Fetch enriched incident
       const updated = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
+      updated.checklist = JSON.parse(updated.checklist_json || '[]');
+      updated.assigned_responder = {
+        ...responder,
+        full_name: req.user.full_name,
+        phone: req.user.phone
+      };
+
+      // Real-time broadcasts
+      // 1. Citizen gets assignment notification and live tracking update
       io.to(`incident_${incidentId}`).emit('incident_updated', updated);
+      io.to(`incident_${incidentId}`).emit('incident_status_changed', { incident: updated, note: acceptMsg });
+      io.to(`incident_${incidentId}`).emit('citizen_assignment_notification', {
+        incidentId,
+        message: "Help is on the way. A nearby responder has accepted your emergency request.",
+        responder: updated.assigned_responder
+      });
       io.to('dispatch_room').emit('incident_updated', updated);
 
-      return res.json({ success: true, message: 'Assignment accepted', incident: updated });
-    } else if (action === 'decline') {
-      // Reassign to next responder
-      if (activeDispatchTimers.has(incidentId)) {
-        const { currentIndex, rankedResponders } = activeDispatchTimers.get(incidentId);
-        clearDispatchTimer(incidentId);
-        dispatchToNextResponder(incidentId, rankedResponders, currentIndex + 1);
+      // 2. Notify all other alerted responders that incident has been assigned to someone else
+      const otherRequests = await dbAll(
+        'SELECT responder_id FROM incident_responder_requests WHERE incident_id = ? AND responder_id != ?',
+        [incidentId, responder.id]
+      );
+      for (const row of otherRequests) {
+        io.to(`responder_${row.responder_id}`).emit('job_assigned_to_other', {
+          incidentId,
+          message: 'This emergency has already been accepted by another nearby responder.'
+        });
       }
 
-      await logAudit(req.user.id, req.user.full_name, 'DECLINE_ASSIGNMENT', incidentId, `Declined assignment`, req);
+      return res.json({ success: true, message: 'Assignment accepted successfully', incident: updated });
+
+    } else if (action === 'decline') {
+      // Record decline
+      await dbRun(
+        `UPDATE incident_responder_requests
+         SET status = 'DECLINED', responded_at = CURRENT_TIMESTAMP
+         WHERE incident_id = ? AND responder_id = ?`,
+        [incidentId, responder.id]
+      );
+
+      await logAudit(req.user.id, req.user.full_name, 'DECLINE_ASSIGNMENT', incidentId, `Declined emergency request`, req);
+
+      // Check if any other requests are still PENDING
+      const pendingRow = await dbGet(
+        `SELECT COUNT(*) as count FROM incident_responder_requests
+         WHERE incident_id = ? AND status = 'PENDING'`,
+        [incidentId]
+      );
+
+      // If all alerted responders have declined or expired, and none accepted
+      if (pendingRow.count === 0 && !incident.assigned_responder_id) {
+        clearIncidentTimer(incidentId);
+
+        await dbRun(
+          `UPDATE incidents SET status = 'NO_RESPONDER_AVAILABLE', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND assigned_responder_id IS NULL`,
+          [incidentId]
+        );
+
+        const noRespMsg = 'All nearby responders declined or were unavailable. Please contact emergency services directly (112 / 108).';
+        await dbRun(
+          `INSERT INTO incident_updates (incident_id, status, note, updated_by_name)
+           VALUES (?, 'NO_RESPONDER_AVAILABLE', ?, 'System')`,
+          [incidentId, noRespMsg]
+        );
+
+        const updated = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
+        if (updated) {
+          updated.checklist = JSON.parse(updated.checklist_json || '[]');
+        }
+        io.to(`incident_${incidentId}`).emit('incident_status_changed', { incident: updated, note: noRespMsg });
+        io.to(`incident_${incidentId}`).emit('no_responders_alert', { incidentId, message: noRespMsg });
+        io.to('dispatch_room').emit('incident_status_changed', { incident: updated });
+      }
+
       return res.json({ success: true, message: 'Assignment declined' });
     }
   } catch (err) {
@@ -502,6 +762,11 @@ app.post('/api/incidents/:id/status', authenticateToken, async (req, res) => {
   try {
     const incident = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
     if (!incident) return res.status(404).json({ error: 'Incident not found' });
+
+    // Security check: Citizens cannot arbitrarily change statuses unless it is their own incident
+    if (req.user.role === 'citizen' && incident.citizen_id && incident.citizen_id !== req.user.id && !req.user.isGuest) {
+      return res.status(403).json({ error: 'You are not authorized to modify another citizen incident.' });
+    }
 
     let responseTimeSec = incident.response_time_sec;
     if (status === 'On Scene' && !responseTimeSec) {
@@ -521,6 +786,15 @@ app.post('/api/incidents/:id/status', authenticateToken, async (req, res) => {
       await dbRun('UPDATE responders SET lat = ?, lng = ?, last_active = CURRENT_TIMESTAMP WHERE user_id = ?', [lat, lng, req.user.id]);
     }
 
+    // When incident is Resolved: RESTORE RESPONDER AVAILABILITY
+    if (status === 'Resolved' && incident.assigned_responder_id) {
+      await dbRun(
+        'UPDATE responders SET is_available = 1, current_incident_id = NULL WHERE id = ?',
+        [incident.assigned_responder_id]
+      );
+      io.to('dispatch_room').emit('responder_updated', { responderId: incident.assigned_responder_id, is_available: 1 });
+    }
+
     await dbRun(
       `INSERT INTO incident_updates (incident_id, status, note, updated_by_name, lat, lng)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -530,6 +804,17 @@ app.post('/api/incidents/:id/status', authenticateToken, async (req, res) => {
     await logAudit(req.user.id, req.user.full_name, 'UPDATE_STATUS', incidentId, `Status: ${status}`, req);
 
     const updated = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
+    if (updated) {
+      updated.checklist = JSON.parse(updated.checklist_json || '[]');
+      if (updated.assigned_responder_id) {
+        const resp = await dbGet(
+          `SELECT r.*, u.full_name, u.phone FROM responders r JOIN users u ON r.user_id = u.id WHERE r.id = ?`,
+          [updated.assigned_responder_id]
+        );
+        updated.assigned_responder = resp;
+      }
+    }
+
     io.to(`incident_${incidentId}`).emit('incident_status_changed', { incident: updated, note });
     io.to('dispatch_room').emit('incident_status_changed', { incident: updated });
 
@@ -761,7 +1046,20 @@ io.on('connection', (socket) => {
 });
 
 // ================= SERVER STARTUP =================
-server.listen(PORT, async () => {
-  await seedDatabase();
-  console.log(`🚨 Hyperlocal Emergency Response Platform Server running on http://127.0.0.1:${PORT}`);
-});
+if (require.main === module) {
+  server.listen(PORT, async () => {
+    await seedDatabase();
+    console.log(`🚨 Hyperlocal Emergency Response Platform Server running on http://127.0.0.1:${PORT}`);
+  });
+}
+
+module.exports = {
+  app,
+  server,
+  io,
+  alertAllEligibleNearbyResponders,
+  clearIncidentTimer,
+  NEARBY_RESPONDER_RADIUS_KM,
+  EXPANDED_RADIUS_KM,
+  RESPONDER_REQUEST_TIMEOUT_SECONDS
+};

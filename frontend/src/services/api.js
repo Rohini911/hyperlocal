@@ -115,6 +115,11 @@ export const incidentApi = {
     return res.data;
   },
 
+  getRequests: async (id) => {
+    const res = await api.get(`/incidents/${id}/requests`);
+    return res.data;
+  },
+
   assign: async (id, action) => {
     const res = await api.post(`/incidents/${id}/assign`, { action });
     return res.data;
