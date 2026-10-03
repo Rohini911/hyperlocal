@@ -5,7 +5,7 @@ import {
   Map, ChevronDown, ChevronUp
 } from "lucide-react";
 import MapComponent from "./MapComponent";
-import { incidentApi } from "../services/api";
+import { incidentApi, getDeviceLocation } from "../services/api";
 import { sounds } from "../services/soundEffects";
 
 const EXACT_CHECKLIST = [
@@ -25,7 +25,11 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocating, setIsLocating] = useState(true);
   const [showMapPicker, setShowMapPicker] = useState(false);
-  const [coords, setCoords] = useState({ lat: 17.5800, lng: 78.4867 });
+  const [coords, setCoords] = useState(() => {
+    const savedLat = parseFloat(localStorage.getItem("last_device_gps_lat"));
+    const savedLng = parseFloat(localStorage.getItem("last_device_gps_lng"));
+    return (!isNaN(savedLat) && !isNaN(savedLng)) ? { lat: savedLat, lng: savedLng } : { lat: 17.5800, lng: 78.4867 };
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -37,28 +41,13 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
     }
   }, [isOpen]);
 
-  const handleDetectLocation = () => {
+  const handleDetectLocation = async () => {
     sounds.playTap();
     setIsLocating(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setCoords({
-            lat: parseFloat(pos.coords.latitude.toFixed(5)),
-            lng: parseFloat(pos.coords.longitude.toFixed(5))
-          });
-          sounds.playStep();
-          setIsLocating(false);
-        },
-        () => {
-          setCoords({ lat: 17.5800, lng: 78.4867 });
-          setIsLocating(false);
-        },
-        { enableHighAccuracy: true, timeout: 5000 }
-      );
-    } else {
-      setIsLocating(false);
-    }
+    const loc = await getDeviceLocation(17.5800, 78.4867);
+    setCoords({ lat: loc.lat, lng: loc.lng });
+    sounds.playStep();
+    setIsLocating(false);
   };
 
   const handleToggleChecklist = (item) => {

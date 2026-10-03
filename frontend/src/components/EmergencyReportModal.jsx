@@ -5,7 +5,7 @@ import {
   CheckCircle2, RefreshCw, Volume2, Globe, Check, AlertCircle
 } from "lucide-react";
 import MapComponent from "./MapComponent";
-import { incidentApi } from "../services/api";
+import { incidentApi, getDeviceLocation } from "../services/api";
 
 const EMERGENCY_TYPES = [
   { id: "Medical Emergency", label: "Medical Emergency", icon: HeartPulse, color: "#2563eb", service: "Ambulance" },
@@ -30,8 +30,12 @@ export default function EmergencyReportModal({ isOpen, onClose, onSuccess }) {
   const [checklist, setChecklist] = useState(["Injuries reported (Bleeding / Fractures)"]); // MANDATORY
   const [checklistError, setChecklistError] = useState("");
 
-  // Location auto-detection
-  const [coords, setCoords] = useState({ lat: 12.9735, lng: 77.5985 });
+  // Location auto-detection (synchronized across devices)
+  const [coords, setCoords] = useState(() => {
+    const savedLat = parseFloat(localStorage.getItem("last_device_gps_lat"));
+    const savedLng = parseFloat(localStorage.getItem("last_device_gps_lng"));
+    return (!isNaN(savedLat) && !isNaN(savedLng)) ? { lat: savedLat, lng: savedLng } : { lat: 17.5800, lng: 78.4867 };
+  });
   const [addressText, setAddressText] = useState("Auto-detected via Device GPS");
   const [isLocating, setIsLocating] = useState(true);
   const [accuracyMeters, setAccuracyMeters] = useState(15);
@@ -53,30 +57,13 @@ export default function EmergencyReportModal({ isOpen, onClose, onSuccess }) {
     }
   }, [isOpen]);
 
-  const handleAutoDetectLocation = () => {
+  const handleAutoDetectLocation = async () => {
     setIsLocating(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const lat = parseFloat(pos.coords.latitude.toFixed(5));
-          const lng = parseFloat(pos.coords.longitude.toFixed(5));
-          const acc = Math.round(pos.coords.accuracy || 12);
-          setCoords({ lat, lng });
-          setAccuracyMeters(acc);
-          setAddressText(`GPS: ${lat}, ${lng} (Accuracy: ~${acc}m)`);
-          setIsLocating(false);
-        },
-        (err) => {
-          // Default fallback
-          setCoords({ lat: 12.9735, lng: 77.5985 });
-          setAddressText("Central Sector (GPS permission denied - using default)");
-          setIsLocating(false);
-        },
-        { enableHighAccuracy: true, timeout: 6000 }
-      );
-    } else {
-      setIsLocating(false);
-    }
+    const loc = await getDeviceLocation(17.5800, 78.4867);
+    setCoords({ lat: loc.lat, lng: loc.lng });
+    setAccuracyMeters(loc.accuracy || 12);
+    setAddressText(`GPS: ${loc.lat}, ${loc.lng} (Accuracy: ~${loc.accuracy || 12}m)`);
+    setIsLocating(false);
   };
 
   const handleToggleChecklist = (item) => {

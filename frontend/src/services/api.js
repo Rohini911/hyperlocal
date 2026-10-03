@@ -346,6 +346,10 @@ export const incidentApi = {
   updateStatus: async (id, status, note, lat, lng, resolution_notes) => {
     try {
       const res = await api.post(`/incidents/${id}/status`, { status, note, lat, lng, resolution_notes });
+      if (res.data && res.data.incident) {
+        socket.emit("incident_status_changed", { incident: res.data.incident });
+        socket.emit("incident_updated", res.data.incident);
+      }
       return res.data;
     } catch (err) {
       const incidents = getStoredIncidents();
@@ -354,6 +358,8 @@ export const incidentApi = {
         inc.status = status;
         if (resolution_notes) inc.resolution_notes = resolution_notes;
         setStoredIncidents(incidents);
+        socket.emit("incident_status_changed", { incident: inc });
+        socket.emit("incident_updated", inc);
         return { success: true, incident: inc };
       }
       return { success: true };
@@ -363,6 +369,35 @@ export const incidentApi = {
   clearHistory: () => {
     localStorage.removeItem("app_incidents");
   }
+};
+
+// Global Device GPS Locator shared across Citizen, Responder & Admin
+export const getDeviceLocation = async (fallbackLat = 17.5800, fallbackLng = 78.4867) => {
+  const savedLat = parseFloat(localStorage.getItem("last_device_gps_lat"));
+  const savedLng = parseFloat(localStorage.getItem("last_device_gps_lng"));
+  const defaultCoords = (!isNaN(savedLat) && !isNaN(savedLng)) 
+    ? { lat: savedLat, lng: savedLng }
+    : { lat: fallbackLat, lng: fallbackLng };
+
+  if (typeof navigator !== "undefined" && navigator.geolocation) {
+    try {
+      const pos = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 4000,
+          maximumAge: 5000
+        });
+      });
+      if (pos && pos.coords) {
+        const lat = parseFloat(pos.coords.latitude.toFixed(5));
+        const lng = parseFloat(pos.coords.longitude.toFixed(5));
+        localStorage.setItem("last_device_gps_lat", lat.toString());
+        localStorage.setItem("last_device_gps_lng", lng.toString());
+        return { lat, lng, accuracy: pos.coords.accuracy || 10 };
+      }
+    } catch (e) {}
+  }
+  return defaultCoords;
 };
 
 // Responders API

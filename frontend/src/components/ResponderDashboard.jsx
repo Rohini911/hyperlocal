@@ -6,7 +6,7 @@ import {
   Volume2, VolumeX, Radio, Play, Pause, Compass
 } from "lucide-react";
 import MapComponent from "./MapComponent";
-import { incidentApi, responderApi, routingApi, socket, deduplicateIncidents } from "../services/api";
+import { incidentApi, responderApi, routingApi, socket, deduplicateIncidents, getDeviceLocation } from "../services/api";
 import { sounds } from "../services/soundEffects";
 
 export default function ResponderDashboard({ currentUser, onLogout }) {
@@ -16,8 +16,12 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
   const [routeStats, setRouteStats] = useState({ distanceKm: 0, durationMinutes: 0 });
   const [isAvailable, setIsAvailable] = useState(true);
 
-  // Auto-detected Responder GPS location
-  const [responderCoords, setResponderCoords] = useState({ lat: 17.5950, lng: 78.4950 });
+  // Auto-detected Responder GPS location (synchronized across all tabs)
+  const [responderCoords, setResponderCoords] = useState(() => {
+    const savedLat = parseFloat(localStorage.getItem("last_device_gps_lat"));
+    const savedLng = parseFloat(localStorage.getItem("last_device_gps_lng"));
+    return (!isNaN(savedLat) && !isNaN(savedLng)) ? { lat: savedLat, lng: savedLng } : { lat: 17.5950, lng: 78.4950 };
+  });
   const [isLocating, setIsLocating] = useState(false);
   const [isSimulatingMovement, setIsSimulatingMovement] = useState(false);
   const simIntervalRef = useRef(null);
@@ -104,27 +108,13 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     return () => clearInterval(timer);
   }, [incomingAlert, countdown]);
 
-  const handleDetectGPS = () => {
+  const handleDetectGPS = async () => {
     sounds.playTap();
     setIsLocating(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const lat = parseFloat(pos.coords.latitude.toFixed(5));
-          const lng = parseFloat(pos.coords.longitude.toFixed(5));
-          setResponderCoords({ lat, lng });
-          setIsLocating(false);
-          responderApi.updateLocation(lat, lng);
-        },
-        () => {
-          setResponderCoords({ lat: 17.5950, lng: 78.4950 });
-          setIsLocating(false);
-        },
-        { enableHighAccuracy: true, timeout: 5000 }
-      );
-    } else {
-      setIsLocating(false);
-    }
+    const loc = await getDeviceLocation(17.5950, 78.4950);
+    setResponderCoords({ lat: loc.lat, lng: loc.lng });
+    setIsLocating(false);
+    responderApi.updateLocation(loc.lat, loc.lng);
   };
 
   const startLiveGpsBroadcasting = (incidentId) => {
@@ -134,6 +124,8 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
         (pos) => {
           const lat = parseFloat(pos.coords.latitude.toFixed(5));
           const lng = parseFloat(pos.coords.longitude.toFixed(5));
+          localStorage.setItem("last_device_gps_lat", lat.toString());
+          localStorage.setItem("last_device_gps_lng", lng.toString());
           setResponderCoords({ lat, lng });
           socket.emit("live_gps_stream", {
             incidentId,
@@ -185,21 +177,10 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     sounds.playSuccess();
     
     // Quick GPS capture upon acceptance
-    let currentLat = responderCoords.lat;
-    let currentLng = responderCoords.lng;
-
-    if (navigator.geolocation) {
-      try {
-        const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 2500 });
-        });
-        if (pos && pos.coords) {
-          currentLat = parseFloat(pos.coords.latitude.toFixed(5));
-          currentLng = parseFloat(pos.coords.longitude.toFixed(5));
-          setResponderCoords({ lat: currentLat, lng: currentLng });
-        }
-      } catch (e) {}
-    }
+    const loc = await getDeviceLocation(responderCoords.lat, responderCoords.lng);
+    const currentLat = loc.lat;
+    const currentLng = loc.lng;
+    setResponderCoords({ lat: currentLat, lng: currentLng });
 
     try {
       const res = await incidentApi.assign(incidentId, "accept", currentLat, currentLng);
@@ -260,10 +241,21 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
         responderCoords.lng,
         nextStatus === "Resolved" ? "Handled & Stabilized" : null
       );
-      setActiveIncident(res.incident || { ...activeIncident, status: nextStatus });
+      if (nextStatus === "Resolved") {
+        setRouteCoords([]);
+        setActiveIncident(null);
+        sounds.showSystemNotification("✅ Mission Completed!", `Incident ${activeIncident.id} marked as Resolved.`);
+      } else {
+        setActiveIncident(res.incident || { ...activeIncident, status: nextStatus });
+      }
       loadIncidents();
     } catch (err) {
-      setActiveIncident({ ...activeIncident, status: nextStatus });
+      if (nextStatus === "Resolved") {
+        setRouteCoords([]);
+        setActiveIncident(null);
+      } else {
+        setActiveIncident({ ...activeIncident, status: nextStatus });
+      }
     }
   };
 
