@@ -155,17 +155,6 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
         </div>
 
         <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-          {/* Audio FX Toggle */}
-          <button
-            onClick={handleToggleAudio}
-            className="btn-outline"
-            style={{ padding: "9px 12px", fontSize: "0.82rem", color: isMuted ? "#94a3b8" : "#00ff88", borderColor: isMuted ? "rgba(255,255,255,0.1)" : "rgba(0,255,136,0.3)" }}
-            title={isMuted ? "Audio Muted - Click to Unmute" : "Audio Active - Click to Mute"}
-          >
-            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-            <span style={{ marginLeft: "4px" }}>{isMuted ? "Muted" : "SFX On"}</span>
-          </button>
-
           {/* Prominent SOS button */}
           <button
             onClick={() => { sounds.playAlertSiren(); onOpenSos(); }}

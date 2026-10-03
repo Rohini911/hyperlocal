@@ -39,19 +39,6 @@ export default function LandingPage({
       padding: "20px 16px"
     }}>
       
-      {/* Audio FX Toggle (Top Right) */}
-      <div style={{ position: "absolute", top: "16px", right: "16px" }}>
-        <button
-          onClick={handleToggleAudio}
-          className="btn-outline"
-          style={{ padding: "6px 12px", fontSize: "0.78rem", color: isMuted ? "#94a3b8" : "#00ff88", borderColor: isMuted ? "rgba(255,255,255,0.1)" : "rgba(0,255,136,0.3)" }}
-          title={isMuted ? "Audio Muted - Click to Unmute" : "Audio Active - Click to Mute"}
-        >
-          {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-          <span style={{ marginLeft: "4px" }}>{isMuted ? "Muted" : "SFX"}</span>
-        </button>
-      </div>
-
       {/* Main Container */}
       <main style={{ maxWidth: "560px", width: "100%", textAlign: "center", margin: "auto" }}>
         
