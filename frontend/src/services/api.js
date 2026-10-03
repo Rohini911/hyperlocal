@@ -286,9 +286,9 @@ export const incidentApi = {
     return getStoredIncidents();
   },
 
-  assign: async (id, action) => {
+  assign: async (id, action, lat, lng) => {
     try {
-      const res = await api.post(`/incidents/${id}/assign`, { action });
+      const res = await api.post(`/incidents/${id}/assign`, { action, lat, lng });
       return res.data;
     } catch (err) {
       const incidents = getStoredIncidents();
@@ -300,10 +300,10 @@ export const incidentApi = {
         inc.assigned_responder = {
           full_name: storedUser.full_name || "Assigned Responder",
           service_type: storedUser.service_type || inc.suggested_service,
-          vehicle_number: storedUser.vehicle_number || "KA-01-DEMO-01",
+          vehicle_number: storedUser.vehicle_number || "DEMO-UNIT",
           phone: storedUser.phone || "+91 98765 43210",
-          lat: 17.5920,
-          lng: 78.4930
+          lat: lat || 17.5920,
+          lng: lng || 78.4930
         };
         setStoredIncidents(incidents);
         return { success: true, incident: inc };

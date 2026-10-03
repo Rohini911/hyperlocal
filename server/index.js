@@ -451,6 +451,13 @@ app.post('/api/incidents/:id/assign', authenticateToken, async (req, res) => {
         return res.status(409).json({ error: 'Incident has already been accepted by another responder.' });
       }
 
+      const acceptLat = req.body.lat || responder.lat;
+      const acceptLng = req.body.lng || responder.lng;
+
+      if (req.body.lat && req.body.lng) {
+        await dbRun(`UPDATE responders SET lat = ?, lng = ? WHERE id = ?`, [req.body.lat, req.body.lng, responder.id]);
+      }
+
       clearDispatchTimer(incidentId);
 
       await dbRun(
@@ -468,14 +475,18 @@ app.post('/api/incidents/:id/assign', authenticateToken, async (req, res) => {
       await dbRun(
         `INSERT INTO incident_updates (incident_id, status, note, updated_by_name, lat, lng)
          VALUES (?, 'Assigned', ?, ?, ?, ?)`,
-        [incidentId, `Accepted by ${req.user.full_name} (${responder.organization_name})`, req.user.full_name, responder.lat, responder.lng]
+        [incidentId, `Accepted by ${req.user.full_name} (${responder.organization_name})`, req.user.full_name, acceptLat, acceptLng]
       );
 
-      await logAudit(req.user.id, req.user.full_name, 'ACCEPT_ASSIGNMENT', incidentId, `Accepted assignment`, req);
+      await logAudit(req.user.id, req.user.full_name, 'ACCEPT_ASSIGNMENT', incidentId, `Accepted assignment at GPS: ${acceptLat}, ${acceptLng}`, req);
 
       const updated = await dbGet('SELECT * FROM incidents WHERE id = ?', [incidentId]);
       const respUser = await dbGet(`SELECT r.*, u.full_name, u.phone FROM responders r JOIN users u ON r.user_id = u.id WHERE r.id = ?`, [responder.id]);
       if (updated) {
+        if (respUser) {
+          respUser.lat = acceptLat;
+          respUser.lng = acceptLng;
+        }
         updated.assigned_responder = respUser;
       }
 

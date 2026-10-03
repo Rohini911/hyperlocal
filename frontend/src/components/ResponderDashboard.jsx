@@ -191,14 +191,27 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
   const handleAccept = async (incidentId) => {
     sounds.playSuccess();
     try {
-      const res = await incidentApi.assign(incidentId, "accept");
+      const res = await incidentApi.assign(incidentId, "accept", responderCoords.lat, responderCoords.lng);
       setIncomingAlert(null);
       const inc = res.incident || incidents.find(i => i.id === incidentId);
-      setActiveIncident(inc);
       if (inc) {
+        if (inc.assigned_responder) {
+          inc.assigned_responder.lat = responderCoords.lat;
+          inc.assigned_responder.lng = responderCoords.lng;
+        }
+        setActiveIncident(inc);
         fetchRoute(inc);
         startLiveGpsBroadcasting(inc.id);
       }
+      
+      // Immediately broadcast responder GPS start location
+      socket.emit("live_gps_stream", {
+        incidentId,
+        lat: responderCoords.lat,
+        lng: responderCoords.lng,
+        responderName
+      });
+
       loadIncidents();
     } catch (err) {
       alert(err.response?.data?.error || "Incident already accepted or unavailable.");
