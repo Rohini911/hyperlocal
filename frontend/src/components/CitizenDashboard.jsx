@@ -358,27 +358,6 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
               <span className="neon-badge neon-badge-info" style={{ fontSize: "0.72rem" }}>
                 {incidents.length} Total
               </span>
-              {incidents.length > 0 && (
-                <button
-                  onClick={handleClearAllReports}
-                  title="Clear all past reports"
-                  style={{
-                    background: "rgba(255, 51, 75, 0.12)",
-                    border: "1px solid rgba(255, 51, 75, 0.3)",
-                    color: "#ff4d67",
-                    borderRadius: "6px",
-                    padding: "4px 8px",
-                    fontSize: "0.7rem",
-                    fontWeight: "700",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "4px"
-                  }}
-                >
-                  <Trash2 size={12} /> Clear All
-                </button>
-              )}
             </div>
           </div>
 
