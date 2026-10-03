@@ -329,13 +329,35 @@ export default function EmergencyReportModal({ isOpen, onClose, onSuccess }) {
                 </button>
               </div>
 
-              <div style={{ height: "180px", borderRadius: "10px", overflow: "hidden", marginBottom: "8px" }}>
+              <div style={{ height: "180px", borderRadius: "10px", overflow: "hidden", marginBottom: "8px", position: "relative" }}>
+                <div style={{
+                  position: "absolute",
+                  top: "8px",
+                  left: "8px",
+                  zIndex: 999,
+                  background: "rgba(15, 23, 42, 0.85)",
+                  color: "#38bdf8",
+                  padding: "3px 8px",
+                  borderRadius: "6px",
+                  fontSize: "0.7rem",
+                  fontWeight: "700",
+                  pointerEvents: "none"
+                }}>
+                  📍 Drag 🎯 pin or click to set custom location
+                </div>
                 <MapComponent
                   height="180px"
                   center={[coords.lat, coords.lng]}
                   pickerMode={true}
                   pickerCoords={coords}
-                  onPickerCoordsChange={(lat, lng) => setCoords({ lat: parseFloat(lat.toFixed(5)), lng: parseFloat(lng.toFixed(5)) })}
+                  onPickerCoordsChange={(lat, lng) => {
+                    const cleanLat = parseFloat(lat.toFixed(5));
+                    const cleanLng = parseFloat(lng.toFixed(5));
+                    setCoords({ lat: cleanLat, lng: cleanLng });
+                    setAddressText(`Manual Pin: Lat ${cleanLat}, Lng ${cleanLng}`);
+                    localStorage.setItem("last_device_gps_lat", cleanLat.toString());
+                    localStorage.setItem("last_device_gps_lng", cleanLng.toString());
+                  }}
                 />
               </div>
 

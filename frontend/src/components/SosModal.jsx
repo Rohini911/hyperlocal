@@ -247,6 +247,7 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
           </div>
 
           {/* 3. Clean Automatic GPS Detection with 'Open Map' Button */}
+          {/* 3. Clean GPS Detection & Interactive Draggable Map Pin */}
           <div>
             <div style={{ 
               background: "rgba(30, 41, 59, 0.5)", 
@@ -257,12 +258,13 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
               justifyContent: "space-between",
               alignItems: "center",
               flexWrap: "wrap",
-              gap: "8px"
+              gap: "8px",
+              marginBottom: "8px"
             }}>
               <div>
-                <div style={{ fontSize: "0.8rem", fontWeight: "800", color: "#00e5ff", display: "flex", alignItems: "center", gap: "6px" }}>
+                <div style={{ fontSize: "0.82rem", fontWeight: "800", color: "#00e5ff", display: "flex", alignItems: "center", gap: "6px" }}>
                   <MapPin size={15} color="#00e5ff" />
-                  <span>GPS Auto-Detected:</span>
+                  <span>3. Incident Location Pin</span>
                 </div>
                 <div style={{ fontSize: "0.76rem", color: "#cbd5e1", marginTop: "2px", fontFamily: "monospace" }}>
                   Lat: {coords.lat}, Lng: {coords.lng}
@@ -273,34 +275,55 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
                 <button
                   type="button"
                   onClick={handleDetectLocation}
-                  style={{ background: "transparent", border: "1px solid rgba(0,229,255,0.3)", borderRadius: "6px", color: "#00e5ff", fontSize: "0.75rem", fontWeight: "600", padding: "4px 8px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+                  style={{ background: "rgba(0, 229, 255, 0.12)", border: "1px solid rgba(0,229,255,0.4)", borderRadius: "6px", color: "#00e5ff", fontSize: "0.75rem", fontWeight: "700", padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
                 >
-                  <Navigation size={11} className={isLocating ? "animate-spin" : ""} />
-                  {isLocating ? "Locating..." : "Refresh GPS"}
+                  <Navigation size={12} className={isLocating ? "animate-spin" : ""} />
+                  {isLocating ? "Locating..." : "Auto-GPS"}
                 </button>
 
-                {/* Open Map Button */}
                 <button
                   type="button"
                   onClick={() => setShowMapPicker(!showMapPicker)}
-                  style={{ background: showMapPicker ? "rgba(0, 229, 255, 0.2)" : "rgba(255, 255, 255, 0.08)", border: "1px solid rgba(0, 229, 255, 0.4)", borderRadius: "6px", color: "#00e5ff", fontSize: "0.75rem", fontWeight: "700", padding: "4px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+                  style={{ background: showMapPicker ? "rgba(0, 229, 255, 0.25)" : "rgba(255, 255, 255, 0.08)", border: "1px solid rgba(0, 229, 255, 0.5)", borderRadius: "6px", color: "#00e5ff", fontSize: "0.75rem", fontWeight: "700", padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
                 >
                   <Map size={12} />
-                  {showMapPicker ? "Hide Map" : "Open Map"}
-                  {showMapPicker ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  {showMapPicker ? "Pin Active" : "Pick on Map"}
                 </button>
               </div>
             </div>
 
-            {/* Expandable Map Picker when clicked */}
+            {/* Interactive Draggable Pin Map Canvas */}
             {showMapPicker && (
-              <div style={{ marginTop: "8px", height: "180px", borderRadius: "8px", overflow: "hidden", border: "1.5px solid rgba(0, 229, 255, 0.4)", animation: "fadeIn 0.2s ease" }}>
+              <div style={{ borderRadius: "10px", overflow: "hidden", border: "1.5px solid rgba(0, 229, 255, 0.5)", position: "relative", animation: "fadeIn 0.2s ease" }}>
+                <div style={{
+                  position: "absolute",
+                  top: "8px",
+                  left: "8px",
+                  zIndex: 999,
+                  background: "rgba(14, 20, 36, 0.9)",
+                  border: "1px solid rgba(0, 229, 255, 0.3)",
+                  borderRadius: "6px",
+                  padding: "3px 8px",
+                  fontSize: "0.7rem",
+                  fontWeight: "700",
+                  color: "#00e5ff",
+                  pointerEvents: "none"
+                }}>
+                  📍 Tap map or drag 🎯 pin to set location
+                </div>
+
                 <MapComponent
-                  height="180px"
+                  height="170px"
                   center={[coords.lat, coords.lng]}
                   pickerMode={true}
                   pickerCoords={coords}
-                  onPickerCoordsChange={(lat, lng) => setCoords({ lat: parseFloat(lat.toFixed(5)), lng: parseFloat(lng.toFixed(5)) })}
+                  onPickerCoordsChange={(lat, lng) => {
+                    const cleanLat = parseFloat(lat.toFixed(5));
+                    const cleanLng = parseFloat(lng.toFixed(5));
+                    setCoords({ lat: cleanLat, lng: cleanLng });
+                    localStorage.setItem("last_device_gps_lat", cleanLat.toString());
+                    localStorage.setItem("last_device_gps_lng", cleanLng.toString());
+                  }}
                 />
               </div>
             )}
