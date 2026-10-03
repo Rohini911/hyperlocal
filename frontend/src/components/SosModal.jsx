@@ -108,22 +108,34 @@ export default function SosModal({ isOpen, onClose, onSubmitted }) {
     sounds.playAlertSiren();
     try {
       let type = "Medical";
-      if (checklist.includes("Fire or smoke") || checklist.includes("Person trapped")) type = "Fire";
-      else if (checklist.includes("Crime/personal safety threat")) type = "Crime";
-      else if (checklist.includes("Road accident")) type = "Crash";
+      let suggested_service = "Ambulance";
+      if (checklist.includes("Fire or smoke") || checklist.includes("Person trapped")) {
+        type = "Fire";
+        suggested_service = "Fire";
+      } else if (checklist.includes("Crime/personal safety threat")) {
+        type = "Crime";
+        suggested_service = "Police";
+      } else if (checklist.includes("Road accident")) {
+        type = "Crash";
+        suggested_service = "Ambulance";
+      } else if (checklist.includes("Other emergency")) {
+        type = "General";
+        suggested_service = "All";
+      }
 
       const payload = {
         emergency_type: type,
-        description: description.trim(),
+        suggested_service: suggested_service,
+        description: description.trim() || `Reported Conditions: ${checklist.join(', ')}`,
         checklist,
-        lat: coords.lat,
-        lng: coords.lng,
-        address: `GPS Location: Lat ${coords.lat}, Lng ${coords.lng}`
+        lat: Number(coords.lat) || 17.5800,
+        lng: Number(coords.lng) || 78.4867,
+        address: `GPS Location: Lat ${Number(coords.lat).toFixed(4)}, Lng ${Number(coords.lng).toFixed(4)}`
       };
 
       const res = await incidentApi.create(payload);
       sounds.playSuccess();
-      if (onSubmitted) onSubmitted(res.incident || res.data);
+      if (onSubmitted) onSubmitted(res.incident || res.data || res);
       onClose();
     } catch (err) {
       sounds.playSuccess();

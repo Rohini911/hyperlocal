@@ -257,6 +257,7 @@ export const incidentApi = {
         const incidents = getStoredIncidents();
         const updated = deduplicateIncidents([inc, ...incidents]);
         setStoredIncidents(updated);
+        socket.emit("incident_created", inc);
       }
       return { success: true, data: inc, incident: inc };
     } catch (err) {
@@ -264,18 +265,33 @@ export const incidentApi = {
       const newInc = {
         id: `INC-${Math.floor(100 + Math.random() * 900)}`,
         emergency_type: incidentData.emergency_type || "Medical",
-        suggested_service: incidentData.emergency_type === "Fire" ? "Fire" : incidentData.emergency_type === "Crime" ? "Police" : "Ambulance",
+        suggested_service: incidentData.suggested_service || (incidentData.emergency_type === "Fire" ? "Fire" : incidentData.emergency_type === "Crime" ? "Police" : "Ambulance"),
         severity: "Critical",
         description: incidentData.description || "",
         checklist_json: JSON.stringify(incidentData.checklist || []),
-        lat: incidentData.lat || 17.5800,
-        lng: incidentData.lng || 78.4867,
+        lat: Number(incidentData.lat) || 17.5800,
+        lng: Number(incidentData.lng) || 78.4867,
         address: incidentData.address || `GPS: Lat ${incidentData.lat}, Lng ${incidentData.lng}`,
         status: "Reported",
         created_at: new Date().toISOString()
       };
       const updated = deduplicateIncidents([newInc, ...incidents]);
       setStoredIncidents(updated);
+      
+      // Real-time broadcast fallback
+      socket.emit("incident_created", newInc);
+      socket.emit("incoming_job_alert", {
+        incidentId: newInc.id,
+        incident: newInc,
+        emergency_type: newInc.emergency_type,
+        suggested_service: newInc.suggested_service,
+        description: newInc.description,
+        address: newInc.address,
+        lat: newInc.lat,
+        lng: newInc.lng,
+        timeoutSeconds: 300
+      });
+
       return { success: true, data: newInc, incident: newInc };
     }
   },
@@ -295,6 +311,9 @@ export const incidentApi = {
   assign: async (id, action, lat, lng) => {
     try {
       const res = await api.post(`/incidents/${id}/assign`, { action, lat, lng });
+      if (res.data && res.data.incident) {
+        socket.emit("responder_accepted_incident", { incident: res.data.incident, responder: res.data.incident.assigned_responder });
+      }
       return res.data;
     } catch (err) {
       const incidents = getStoredIncidents();
@@ -304,14 +323,20 @@ export const incidentApi = {
         inc.status = "Assigned";
         inc.assigned_responder_id = storedUser.responderId || storedUser.id || 1;
         inc.assigned_responder = {
+          id: storedUser.responderId || storedUser.id || 1,
           full_name: storedUser.full_name || "Assigned Responder",
-          service_type: storedUser.service_type || inc.suggested_service,
+          service_type: storedUser.service_type || inc.suggested_service || "Ambulance",
           vehicle_number: storedUser.vehicle_number || "DEMO-UNIT",
           phone: storedUser.phone || "+91 98765 43210",
-          lat: lat || 17.5920,
-          lng: lng || 78.4930
+          lat: Number(lat) || 17.5920,
+          lng: Number(lng) || 78.4930
         };
         setStoredIncidents(incidents);
+
+        socket.emit("responder_accepted_incident", { incident: inc, responder: inc.assigned_responder });
+        socket.emit("incident_status_changed", { incident: inc });
+        socket.emit("responder_gps_update", { incidentId: id, lat: inc.assigned_responder.lat, lng: inc.assigned_responder.lng, responder: inc.assigned_responder, responderName: inc.assigned_responder.full_name });
+
         return { success: true, incident: inc };
       }
       return { success: true, incident: inc };
