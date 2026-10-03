@@ -48,61 +48,90 @@ const PRESET_USERS = {
   "admin@demo.com": { id: 50, full_name: "Chief Dispatcher Rajesh Mehra", email: "admin@demo.com", role: "admin", phone: "+91 98765 43291" }
 };
 
-// Initial default incidents for demo
-const DEFAULT_INCIDENTS = [
-  {
-    id: "INC-101",
-    emergency_type: "Medical",
-    suggested_service: "Ambulance",
-    severity: "Critical",
-    description: "Pedestrian injured in collision near junction. Medical attention required.",
-    checklist_json: JSON.stringify(["Person injured", "Road accident"]),
-    lat: 17.5815,
-    lng: 78.4880,
-    address: "Balanagar Junction Main Road",
-    status: "Reported",
-    created_at: new Date(Date.now() - 1000 * 60 * 3).toISOString()
-  },
-  {
-    id: "INC-102",
-    emergency_type: "Fire",
-    suggested_service: "Fire",
-    severity: "Critical",
-    description: "Smoke and small electrical fire reported in commercial complex basement.",
-    checklist_json: JSON.stringify(["Fire or smoke"]),
-    lat: 17.5790,
-    lng: 78.4840,
-    address: "Sector 4 Industrial Estate",
-    status: "Reported",
-    created_at: new Date(Date.now() - 1000 * 60 * 6).toISOString()
-  },
-  {
-    id: "INC-103",
-    emergency_type: "Crime",
-    suggested_service: "Police",
-    severity: "High",
-    description: "Immediate police assistance required for personal safety threat.",
-    checklist_json: JSON.stringify(["Crime/personal safety threat"]),
-    lat: 17.5850,
-    lng: 78.4910,
-    address: "Market Road Bus Depot",
-    status: "Reported",
-    created_at: new Date(Date.now() - 1000 * 60 * 8).toISOString()
+// Deduplicate helpers
+export const deduplicateIncidents = (list) => {
+  if (!Array.isArray(list)) return [];
+  const seenIds = new Set();
+  const seenSignatures = new Set();
+  const result = [];
+
+  for (const item of list) {
+    if (!item) continue;
+    const id = item.id || item._id;
+    if (!id || seenIds.has(id)) continue;
+
+    // Signature based on type, location, and approximate time to catch rapid accidental multi-submissions
+    const signature = `${item.emergency_type || ""}_${item.lat || ""}_${item.lng || ""}_${item.description || ""}`;
+    if (seenSignatures.has(signature)) continue;
+
+    seenIds.add(id);
+    seenSignatures.add(signature);
+    result.push(item);
   }
-];
+  return result;
+};
+
+export const deduplicateUsers = (list) => {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  return list.filter(u => {
+    if (!u || !u.email) return false;
+    const email = u.email.trim().toLowerCase();
+    if (seen.has(email)) return false;
+    seen.add(email);
+    return true;
+  });
+};
+
+// Auto-clean storage on script initialization
+export const removeDuplicateData = () => {
+  try {
+    // 1. Clean incidents
+    const rawIncidents = localStorage.getItem("app_incidents");
+    if (rawIncidents) {
+      const parsed = JSON.parse(rawIncidents);
+      const clean = deduplicateIncidents(parsed);
+      localStorage.setItem("app_incidents", JSON.stringify(clean));
+    }
+
+    // 2. Clean registered users
+    const rawUsers = localStorage.getItem("registered_users");
+    if (rawUsers) {
+      const parsedUsers = JSON.parse(rawUsers);
+      const cleanUsers = deduplicateUsers(parsedUsers);
+      localStorage.setItem("registered_users", JSON.stringify(cleanUsers));
+    }
+
+    // 3. Clean offline reports
+    const rawOffline = localStorage.getItem("emergency_offline_pending_reports");
+    if (rawOffline) {
+      const parsedOffline = JSON.parse(rawOffline);
+      const cleanOffline = deduplicateIncidents(parsedOffline);
+      localStorage.setItem("emergency_offline_pending_reports", JSON.stringify(cleanOffline));
+    }
+  } catch (e) {
+    console.warn("Storage deduplication check error:", e);
+  }
+};
+
+// Run deduplication immediately on module load
+removeDuplicateData();
 
 const getStoredIncidents = () => {
   try {
     const raw = localStorage.getItem("app_incidents");
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return deduplicateIncidents(parsed);
+    }
   } catch (e) {}
-  localStorage.setItem("app_incidents", JSON.stringify(DEFAULT_INCIDENTS));
-  return DEFAULT_INCIDENTS;
+  return [];
 };
 
 const setStoredIncidents = (list) => {
   try {
-    localStorage.setItem("app_incidents", JSON.stringify(list));
+    const cleanList = deduplicateIncidents(list);
+    localStorage.setItem("app_incidents", JSON.stringify(cleanList));
   } catch (e) {}
 };
 
@@ -117,10 +146,8 @@ export const authApi = {
       }
       return res.data;
     } catch (err) {
-      // Offline / Cloud Fallback
       const normalizedEmail = (email || "").trim().toLowerCase();
       
-      // Check registered users
       let user = null;
       try {
         const registered = JSON.parse(localStorage.getItem("registered_users") || "[]");
@@ -138,7 +165,6 @@ export const authApi = {
         return { success: true, token: dummyToken, user };
       }
 
-      // If user typed any valid email for demo, grant instant citizen session
       if (normalizedEmail.includes("@")) {
         const autoUser = {
           id: Date.now(),
@@ -166,7 +192,6 @@ export const authApi = {
       }
       return res.data;
     } catch (err) {
-      // Local fallback save
       const newUser = {
         id: Date.now(),
         full_name: userData.full_name,
@@ -203,7 +228,7 @@ export const authApi = {
   }
 };
 
-// Incident APIs with Resilient Fallback
+// Incident APIs with Deduplication
 export const incidentApi = {
   create: async (incidentData) => {
     try {
@@ -224,8 +249,8 @@ export const incidentApi = {
         status: "Reported",
         created_at: new Date().toISOString()
       };
-      incidents.unshift(newInc);
-      setStoredIncidents(incidents);
+      const updated = [newInc, ...incidents];
+      setStoredIncidents(updated);
       return { success: true, data: newInc, incident: newInc };
     }
   },
@@ -234,8 +259,9 @@ export const incidentApi = {
     try {
       const res = await api.get("/incidents");
       if (res.data && res.data.length > 0) {
-        setStoredIncidents(res.data);
-        return res.data;
+        const clean = deduplicateIncidents(res.data);
+        setStoredIncidents(clean);
+        return clean;
       }
     } catch (e) {}
     return getStoredIncidents();
@@ -282,6 +308,10 @@ export const incidentApi = {
       }
       return { success: true };
     }
+  },
+
+  clearHistory: () => {
+    localStorage.removeItem("app_incidents");
   }
 };
 
@@ -320,7 +350,6 @@ export const routingApi = {
       const res = await api.get(`/route?start_lat=${startLat}&start_lng=${startLng}&end_lat=${endLat}&end_lng=${endLng}`);
       return res.data;
     } catch (e) {
-      // Generate realistic route steps between coordinates
       const steps = 15;
       const coords = [];
       for (let i = 0; i <= steps; i++) {
