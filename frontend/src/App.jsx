@@ -6,9 +6,14 @@ import CitizenDashboard from "./components/CitizenDashboard";
 import ResponderDashboard from "./components/ResponderDashboard";
 import { authApi, removeDuplicateData } from "./services/api";
 
+import OfflineEmergencyScreen from "./components/OfflineEmergencyScreen";
+
 export default function App() {
   // Navigation views: 'landing' | 'citizen-dashboard' | 'responder-dashboard'
   const [currentView, setCurrentView] = useState("landing");
+  
+  // Network online/offline state
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
   
   // Auth state
   const [currentUser, setCurrentUser] = useState(null);
@@ -20,6 +25,13 @@ export default function App() {
   const [submittedIncident, setSubmittedIncident] = useState(null);
 
   useEffect(() => {
+    // Online / offline event listeners
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
     // 1. Proactively purge any duplicate entries across localStorage on mount
     removeDuplicateData();
 
@@ -36,6 +48,11 @@ export default function App() {
         localStorage.removeItem("emergency_user");
       }
     }
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   }, []);
 
   const handleOpenAuth = (mode) => {
@@ -89,8 +106,16 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: "#070a12", color: "#f8fafc" }}>
       
+      {/* 0. Dedicated Offline Emergency Mode Screen when disconnected */}
+      {isOffline && (
+        <OfflineEmergencyScreen
+          onReconnect={() => setIsOffline(false)}
+          onOpenOfflineReport={() => setIsSosOpen(true)}
+        />
+      )}
+
       {/* 1. Landing Page (Requirement 1) */}
-      {currentView === "landing" && (
+      {!isOffline && currentView === "landing" && (
         <LandingPage
           onContinueAsGuest={handleContinueAsGuest}
           onOpenCitizenLogin={() => handleOpenAuth("citizen-login")}

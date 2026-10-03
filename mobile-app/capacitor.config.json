@@ -4,9 +4,8 @@
   "webDir": "../frontend/dist",
   "bundledWebRuntime": false,
   "server": {
-    "url": "https://hyperlocal-pi.vercel.app",
-    "cleartext": true,
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "cleartext": true
   },
   "android": {
     "allowMixedContent": true
