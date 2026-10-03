@@ -299,6 +299,10 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
     (i.status === "Reported" || i.status === "Awaiting Responder")
   );
 
+  const completedIncidents = incidents.filter(i => 
+    i.status === "Resolved"
+  );
+
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "16px", display: "flex", flexDirection: "column", gap: "16px" }}>
       
@@ -550,36 +554,94 @@ export default function ResponderDashboard({ currentUser, onLogout }) {
             </div>
           )}
 
-          {/* Incoming Dispatch Queue */}
-          {unassignedMatchingPool.length > 0 && !activeIncident && (
+          {/* Incoming Dispatch Queue for This Service & Sector */}
+          {unassignedMatchingPool.length > 0 && (
             <div style={{
               background: "rgba(14, 20, 36, 0.95)",
               borderRadius: "16px",
               padding: "16px",
-              border: "1px solid rgba(255, 184, 0, 0.3)",
+              border: "1px solid rgba(255, 184, 0, 0.35)",
               display: "flex",
               flexDirection: "column",
               gap: "10px"
             }}>
-              <div style={{ fontSize: "0.85rem", fontWeight: "800", color: "#ffb800", display: "flex", alignItems: "center", gap: "6px" }}>
-                <AlertTriangle size={16} /> Incoming Emergency Dispatches ({unassignedMatchingPool.length})
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: "0.88rem", fontWeight: "800", color: "#ffb800", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertTriangle size={16} /> Available Emergency Reports ({unassignedMatchingPool.length})
+                </div>
+                <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{serviceType} Track</span>
               </div>
 
-              {unassignedMatchingPool.map((inc) => (
-                <div key={inc.id} style={{ background: "rgba(30, 41, 59, 0.6)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: "800", color: "#f8fafc", fontSize: "0.85rem" }}>{inc.id} • {inc.emergency_type}</div>
-                    <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{inc.address || "GPS Coordinates"}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "240px", overflowY: "auto" }}>
+                {unassignedMatchingPool.map((inc) => (
+                  <div key={inc.id} style={{
+                    background: "rgba(30, 41, 59, 0.6)",
+                    padding: "12px",
+                    borderRadius: "10px",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "10px"
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: "800", color: "#f8fafc", fontSize: "0.85rem" }}>
+                        {inc.id} • {inc.emergency_type}
+                      </div>
+                      {inc.description && <div style={{ fontSize: "0.75rem", color: "#cbd5e1", marginTop: "2px" }}>{inc.description}</div>}
+                      <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: "2px" }}>{inc.address || "GPS Coordinates"}</div>
+                    </div>
+                    <button
+                      onClick={() => handleAccept(inc.id)}
+                      className="btn-emergency-main"
+                      style={{ padding: "6px 14px", fontSize: "0.8rem", whiteSpace: "nowrap" }}
+                    >
+                      Accept Mission
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handleAccept(inc.id)}
-                    className="btn-emergency-main"
-                    style={{ padding: "6px 12px", fontSize: "0.78rem" }}
-                  >
-                    Accept
-                  </button>
-                </div>
-              ))}
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Completed Missions History */}
+          {completedIncidents.length > 0 && (
+            <div style={{
+              background: "rgba(14, 20, 36, 0.9)",
+              borderRadius: "16px",
+              padding: "16px",
+              border: "1px solid rgba(0, 255, 136, 0.25)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px"
+            }}>
+              <div style={{ fontSize: "0.85rem", fontWeight: "800", color: "#00ff88", display: "flex", alignItems: "center", gap: "6px" }}>
+                <CheckCircle2 size={16} /> Completed Missions ({completedIncidents.length})
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "180px", overflowY: "auto" }}>
+                {completedIncidents.map((inc) => (
+                  <div key={inc.id} style={{
+                    background: "rgba(15, 23, 42, 0.5)",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(0, 255, 136, 0.15)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center"
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: "800", color: "#f8fafc", fontSize: "0.82rem" }}>
+                        {inc.id} • {inc.emergency_type}
+                      </div>
+                      <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>{inc.address || "GPS Location"}</div>
+                    </div>
+                    <span className="neon-badge neon-badge-resolved" style={{ fontSize: "0.68rem" }}>
+                      Resolved
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
