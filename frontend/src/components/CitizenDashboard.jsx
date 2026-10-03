@@ -3,7 +3,7 @@ import {
   AlertOctagon, Phone, MapPin, Navigation, CheckCircle2, 
   Clock, RefreshCw, User, LogOut, PhoneCall, ChevronRight, Check,
   ShieldAlert, HeartPulse, Flame, Maximize2, Minimize2, Radio, Shield, Activity,
-  ListFilter, AlertTriangle, ChevronDown, Layers
+  ListFilter, AlertTriangle, ChevronDown, Layers, ArrowLeft
 } from "lucide-react";
 import MapComponent from "./MapComponent";
 import { incidentApi, routingApi, socket, deduplicateIncidents } from "../services/api";
@@ -14,6 +14,8 @@ const STATUS_STEPS = ["Reported", "Assigned", "En Route", "On Scene", "Resolved"
 export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, initialIncident }) {
   const [incidents, setIncidents] = useState([]);
   const [activeIncident, setActiveIncident] = useState(initialIncident || null);
+  // View mode: 'list' (all reports list) | 'details' (single report details & map)
+  const [viewMode, setViewMode] = useState(initialIncident ? "details" : "list");
   const [routeCoords, setRouteCoords] = useState([]);
   const [responderLiveLoc, setResponderLiveLoc] = useState(null);
 
@@ -24,6 +26,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
   useEffect(() => {
     if (initialIncident) {
       setActiveIncident(initialIncident);
+      setViewMode("details");
       setIncidents((prev) => deduplicateIncidents([initialIncident, ...prev]));
       if (initialIncident.assigned_responder) {
         fetchRoute(initialIncident);
@@ -38,6 +41,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
       sounds.playAlertSiren();
       if (data && data.id) {
         setActiveIncident(data);
+        setViewMode("details");
         setIncidents((prev) => deduplicateIncidents([data, ...prev]));
         if (data.assigned_responder) fetchRoute(data);
       }
@@ -106,14 +110,20 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
     }
   };
 
-  const handleSelectIncident = (inc) => {
+  const handleOpenDetails = (inc) => {
     sounds.playTap();
     setActiveIncident(inc);
+    setViewMode("details");
     if (inc.assigned_responder) {
       fetchRoute(inc);
     } else {
       setRouteCoords([]);
     }
+  };
+
+  const handleBackToList = () => {
+    sounds.playTap();
+    setViewMode("list");
   };
 
   const fetchRoute = async (incident) => {
@@ -147,14 +157,14 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
   };
 
   const getServiceIcon = (service) => {
-    if (service === "Fire") return <Flame size={15} color="#ff334b" />;
-    if (service === "Police") return <Shield size={15} color="#00e5ff" />;
-    return <HeartPulse size={15} color="#00ff88" />;
+    if (service === "Fire") return <Flame size={16} color="#ff334b" />;
+    if (service === "Police") return <Shield size={16} color="#00e5ff" />;
+    return <HeartPulse size={16} color="#00ff88" />;
   };
 
   return (
     <div style={{
-      maxWidth: "1180px",
+      maxWidth: "860px",
       margin: "0 auto",
       padding: "16px 14px",
       display: "flex",
@@ -168,7 +178,7 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
-        padding: "12px 18px",
+        padding: "12px 16px",
         background: "rgba(14, 20, 36, 0.95)",
         backdropFilter: "blur(16px)",
         borderRadius: "14px",
@@ -181,10 +191,10 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
           </div>
           <div>
             <div style={{ fontSize: "0.95rem", fontWeight: "900", color: "#f8fafc", lineHeight: "1.1" }}>
-              Live Emergency Tracking
+              Emergency Tracking
             </div>
             <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
-              {currentUser?.full_name || "Citizen"} • {incidents.length} active report{incidents.length === 1 ? "" : "s"}
+              {currentUser?.full_name || "Citizen"}
             </div>
           </div>
         </div>
@@ -208,80 +218,70 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
         </div>
       </header>
 
-      {/* 2. Main Workspace Layout: Vertical Reports Bar (Left) + Details & Live Map (Right) */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: incidents.length > 1 ? "repeat(auto-fit, minmax(280px, 1fr))" : "1fr",
-        gap: "14px",
-        alignItems: "start"
-      }}>
-
-        {/* ================= VERTICAL REPORTS BAR ================= */}
-        {incidents.length > 0 && (
+      {/* ================= VIEW 1: ALL REPORTS VERTICAL LIST ================= */}
+      {viewMode === "list" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          
+          {/* Header Banner */}
           <div style={{
-            background: "rgba(14, 20, 36, 0.95)",
-            backdropFilter: "blur(18px)",
-            borderRadius: "16px",
-            padding: "14px",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            boxShadow: "0 8px 30px rgba(0,0,0,0.4)",
             display: "flex",
-            flexDirection: "column",
-            gap: "10px",
-            maxHeight: "82vh",
-            overflowY: "auto"
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "10px 14px",
+            background: "rgba(14, 20, 36, 0.8)",
+            borderRadius: "12px",
+            border: "1px solid rgba(255, 255, 255, 0.08)"
           }}>
-            <div style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              paddingBottom: "8px",
-              borderBottom: "1px solid rgba(255,255,255,0.08)"
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem", fontWeight: "800", color: "#f8fafc" }}>
-                <Layers size={16} color="#00e5ff" />
-                <span>Active Reports</span>
-              </div>
-              <span className="neon-badge neon-badge-info" style={{ fontSize: "0.68rem" }}>
-                {incidents.length} Listed
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <Layers size={18} color="#00e5ff" />
+              <span style={{ fontSize: "0.92rem", fontWeight: "800", color: "#f8fafc" }}>
+                All Emergency Reports
               </span>
             </div>
+            <span className="neon-badge neon-badge-info" style={{ fontSize: "0.72rem" }}>
+              {incidents.length} Total
+            </span>
+          </div>
 
-            {/* Vertical Cards Stack */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {/* Vertical Stack of Report Cards */}
+          {incidents.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {incidents.map((inc) => {
-                const isSel = activeIncident?.id === inc.id;
                 const serviceColor = getServiceColor(inc.suggested_service || inc.emergency_type);
 
                 return (
                   <div
                     key={inc.id}
-                    onClick={() => handleSelectIncident(inc)}
+                    onClick={() => handleOpenDetails(inc)}
                     style={{
-                      background: isSel 
-                        ? "linear-gradient(135deg, rgba(0, 229, 255, 0.18), rgba(15, 23, 42, 0.9))" 
-                        : "rgba(30, 41, 59, 0.5)",
-                      border: isSel 
-                        ? "1.8px solid #00e5ff" 
-                        : "1px solid rgba(255, 255, 255, 0.08)",
-                      borderRadius: "12px",
-                      padding: "12px 14px",
+                      background: "rgba(14, 20, 36, 0.95)",
+                      backdropFilter: "blur(14px)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      borderRadius: "14px",
+                      padding: "16px",
                       cursor: "pointer",
                       transition: "all 0.25s ease",
-                      boxShadow: isSel ? "0 4px 20px rgba(0, 229, 255, 0.25)" : "none",
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
                       display: "flex",
                       flexDirection: "column",
-                      gap: "6px",
-                      position: "relative"
+                      gap: "10px"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "#00e5ff";
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
+                      e.currentTarget.style.transform = "translateY(0)";
                     }}
                   >
-                    {/* Card Header */}
+                    {/* Top Row: Service Icon, ID & Status */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <div style={{
-                          width: "24px",
-                          height: "24px",
-                          borderRadius: "6px",
+                          width: "32px",
+                          height: "32px",
+                          borderRadius: "8px",
                           background: `${serviceColor}20`,
                           display: "flex",
                           alignItems: "center",
@@ -289,314 +289,364 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
                         }}>
                           {getServiceIcon(inc.suggested_service || inc.emergency_type)}
                         </div>
-                        <span style={{ fontFamily: "monospace", fontWeight: "800", fontSize: "0.82rem", color: isSel ? "#00e5ff" : "#f8fafc" }}>
-                          {inc.id}
-                        </span>
+                        <div>
+                          <span style={{ fontFamily: "monospace", fontWeight: "900", fontSize: "0.88rem", color: "#00e5ff" }}>
+                            {inc.id}
+                          </span>
+                          <span style={{ color: "#64748b", margin: "0 6px" }}>•</span>
+                          <span style={{ fontSize: "0.82rem", fontWeight: "800", color: "#f8fafc" }}>
+                            {inc.emergency_type} Emergency
+                          </span>
+                        </div>
                       </div>
 
-                      <span className={`neon-badge ${inc.status === "Resolved" ? "neon-badge-resolved" : "neon-badge-critical"}`} style={{ fontSize: "0.64rem", padding: "2px 6px" }}>
+                      <span className={`neon-badge ${inc.status === "Resolved" ? "neon-badge-resolved" : "neon-badge-critical"}`} style={{ fontSize: "0.68rem", padding: "3px 8px" }}>
                         {inc.status}
                       </span>
                     </div>
 
-                    {/* Card Body */}
-                    <div style={{ fontSize: "0.78rem", color: "#cbd5e1", fontWeight: "600", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>{inc.emergency_type} Emergency</span>
-                      <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
-                        {inc.created_at ? new Date(inc.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
-                      </span>
-                    </div>
-
-                    {inc.address && (
-                      <div style={{ fontSize: "0.7rem", color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        📍 {inc.address}
+                    {/* Middle: Details & Address */}
+                    {inc.description && (
+                      <div style={{ fontSize: "0.78rem", color: "#cbd5e1" }}>
+                        {inc.description}
                       </div>
                     )}
 
-                    {/* Click Indicator */}
-                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: "2px" }}>
-                      <span style={{ fontSize: "0.68rem", fontWeight: "700", color: isSel ? "#00e5ff" : "#64748b", display: "flex", alignItems: "center", gap: "2px" }}>
-                        {isSel ? "● Viewing Details" : "Click to view details →"}
+                    {inc.address && (
+                      <div style={{ fontSize: "0.72rem", color: "#94a3b8", display: "flex", alignItems: "center", gap: "5px" }}>
+                        <MapPin size={12} color="#00e5ff" />
+                        <span>{inc.address}</span>
+                      </div>
+                    )}
+
+                    {/* Bottom Action Row */}
+                    <div style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      paddingTop: "8px",
+                      borderTop: "1px solid rgba(255,255,255,0.06)",
+                      marginTop: "2px"
+                    }}>
+                      <span style={{ fontSize: "0.7rem", color: "#64748b" }}>
+                        {inc.created_at ? new Date(inc.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Recently"}
                       </span>
+
+                      <div style={{
+                        background: "rgba(0, 229, 255, 0.12)",
+                        border: "1px solid rgba(0, 229, 255, 0.35)",
+                        color: "#00e5ff",
+                        padding: "5px 12px",
+                        borderRadius: "8px",
+                        fontSize: "0.76rem",
+                        fontWeight: "800",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px"
+                      }}>
+                        View Details & Map <ChevronRight size={14} />
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
-        )}
+          ) : (
+            <div style={{
+              background: "rgba(14, 20, 36, 0.95)",
+              borderRadius: "16px",
+              padding: "40px 20px",
+              textAlign: "center",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              margin: "auto 0"
+            }}>
+              <CheckCircle2 size={40} color="#00ff88" style={{ margin: "0 auto 10px auto" }} />
+              <h3 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#f8fafc", marginBottom: "4px" }}>
+                No Active Emergencies
+              </h3>
+              <p style={{ fontSize: "0.82rem", color: "#94a3b8", maxWidth: "340px", margin: "0 auto 16px auto" }}>
+                Press the button below if emergency help or rescue is needed.
+              </p>
+              <button
+                onClick={() => { sounds.playAlertSiren(); onOpenSos(); }}
+                className="btn-emergency-main"
+                style={{ padding: "10px 24px", fontSize: "0.9rem" }}
+              >
+                <AlertOctagon size={16} /> Report Emergency SOS
+              </button>
+            </div>
+          )}
 
-        {/* ================= DETAILED REPORT INSPECTION VIEW & INTERACTIVE MAP ================= */}
-        {activeIncident ? (
+        </div>
+      )}
+
+      {/* ================= VIEW 2: SINGLE REPORT DETAILS & INTERACTIVE MAP WITH BACK ARROW ================= */}
+      {viewMode === "details" && activeIncident && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          
+          {/* Prominent Back Arrow Button Navigation */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button
+              onClick={handleBackToList}
+              style={{
+                background: "rgba(30, 41, 59, 0.8)",
+                border: "1px solid rgba(0, 229, 255, 0.4)",
+                color: "#00e5ff",
+                padding: "8px 14px",
+                borderRadius: "10px",
+                fontSize: "0.82rem",
+                fontWeight: "800",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                boxShadow: "0 2px 10px rgba(0,0,0,0.3)"
+              }}
+            >
+              <ArrowLeft size={16} /> Back to All Reports
+            </button>
+
+            <span className={`neon-badge ${activeIncident.status === "Resolved" ? "neon-badge-resolved" : "neon-badge-critical"}`} style={{ fontSize: "0.72rem", padding: "4px 10px" }}>
+              {activeIncident.status}
+            </span>
+          </div>
+
+          {/* Interactive Live Map Canvas */}
           <div style={{
+            height: "46vh",
+            minHeight: "340px",
+            maxHeight: "520px",
+            borderRadius: "16px",
+            overflow: "hidden",
+            border: "1.5px solid rgba(56, 189, 248, 0.35)",
+            boxShadow: "0 8px 30px rgba(0, 0, 0, 0.6)",
+            position: "relative"
+          }}>
+            <MapComponent
+              height="100%"
+              center={[activeIncident.lat, activeIncident.lng]}
+              zoom={14}
+              incidentLocation={{ lat: activeIncident.lat, lng: activeIncident.lng }}
+              incidentLabel={`${activeIncident.id} (${activeIncident.emergency_type})`}
+              responderLocation={responderLiveLoc || (activeIncident.assigned_responder ? { lat: activeIncident.assigned_responder.lat, lng: activeIncident.assigned_responder.lng } : null)}
+              responderType={activeIncident.assigned_responder?.service_type || activeIncident.suggested_service}
+              responderLabel={activeIncident.assigned_responder?.full_name || "Assigned Responder"}
+              routeCoordinates={routeCoords}
+            />
+
+            {/* Floating Info Pill over Map */}
+            <div style={{
+              position: "absolute",
+              top: "12px",
+              left: "12px",
+              right: "12px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              zIndex: 999,
+              pointerEvents: "none"
+            }}>
+              <div style={{
+                background: "rgba(14, 20, 36, 0.92)",
+                backdropFilter: "blur(10px)",
+                padding: "6px 12px",
+                borderRadius: "10px",
+                border: "1px solid rgba(255, 255, 255, 0.15)",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.4)"
+              }}>
+                <span style={{ fontFamily: "monospace", fontWeight: "800", color: "#00e5ff", fontSize: "0.82rem" }}>
+                  {activeIncident.id}
+                </span>
+                <span style={{ color: "#64748b" }}>•</span>
+                <span style={{ fontSize: "0.78rem", fontWeight: "700", color: "#f8fafc" }}>
+                  {activeIncident.emergency_type}
+                </span>
+              </div>
+
+              <div style={{
+                background: "rgba(14, 20, 36, 0.92)",
+                backdropFilter: "blur(10px)",
+                padding: "6px 12px",
+                borderRadius: "10px",
+                border: `1px solid ${getServiceColor(activeIncident.suggested_service)}60`,
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+                fontSize: "0.76rem",
+                fontWeight: "800",
+                color: getServiceColor(activeIncident.suggested_service)
+              }}>
+                {getServiceIcon(activeIncident.suggested_service)}
+                <span>{activeIncident.suggested_service}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Unified Details & Progress Card */}
+          <div style={{
+            background: "rgba(14, 20, 36, 0.95)",
+            backdropFilter: "blur(18px)",
+            borderRadius: "16px",
+            padding: "16px",
+            border: "1px solid rgba(255, 255, 255, 0.1)",
+            boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
             display: "flex",
             flexDirection: "column",
-            gap: "12px",
-            flex: 2
+            gap: "14px"
           }}>
             
-            {/* Live Interactive Map Canvas */}
-            <div style={{
-              height: "44vh",
-              minHeight: "320px",
-              maxHeight: "500px",
-              borderRadius: "16px",
-              overflow: "hidden",
-              border: "1.5px solid rgba(56, 189, 248, 0.35)",
-              boxShadow: "0 8px 30px rgba(0, 0, 0, 0.6)",
-              position: "relative"
-            }}>
-              <MapComponent
-                height="100%"
-                center={[activeIncident.lat, activeIncident.lng]}
-                zoom={14}
-                incidentLocation={{ lat: activeIncident.lat, lng: activeIncident.lng }}
-                incidentLabel={`${activeIncident.id} (${activeIncident.emergency_type})`}
-                responderLocation={responderLiveLoc || (activeIncident.assigned_responder ? { lat: activeIncident.assigned_responder.lat, lng: activeIncident.assigned_responder.lng } : null)}
-                responderType={activeIncident.assigned_responder?.service_type || activeIncident.suggested_service}
-                responderLabel={activeIncident.assigned_responder?.full_name || "Assigned Responder"}
-                routeCoordinates={routeCoords}
-              />
+            {/* 5-Step Connected Progress Bar */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", position: "relative", alignItems: "center" }}>
+                {/* Connecting Line */}
+                <div style={{
+                  position: "absolute",
+                  top: "13px",
+                  left: "20px",
+                  right: "20px",
+                  height: "2px",
+                  background: "rgba(255, 255, 255, 0.1)",
+                  zIndex: 0
+                }} />
+                
+                {STATUS_STEPS.map((step, idx) => {
+                  const isDone = idx < currentStepIdx;
+                  const isCurrent = idx === currentStepIdx;
 
-              {/* Floating Header Badge over Map */}
+                  return (
+                    <div key={step} style={{ flex: 1, textAlign: "center", position: "relative", zIndex: 1 }}>
+                      <div style={{
+                        width: "26px",
+                        height: "26px",
+                        borderRadius: "50%",
+                        margin: "0 auto 4px auto",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: isDone ? "#00ff88" : isCurrent ? "#ff334b" : "#1e293b",
+                        color: isDone ? "#070a12" : "white",
+                        fontSize: "10px",
+                        fontWeight: "800",
+                        boxShadow: isCurrent ? "0 0 14px rgba(255, 51, 75, 0.85)" : "none",
+                        transition: "all 0.3s ease"
+                      }}>
+                        {isDone ? <Check size={13} /> : idx + 1}
+                      </div>
+                      <div style={{ fontSize: "0.65rem", fontWeight: isCurrent ? "800" : isDone ? "700" : "500", color: isCurrent ? "#f8fafc" : isDone ? "#00ff88" : "#64748b" }}>
+                        {step}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Responder Information or 5-Min Escalation Alert */}
+            {activeIncident.assigned_responder ? (
               <div style={{
-                position: "absolute",
-                top: "12px",
-                left: "12px",
-                right: "12px",
+                background: "rgba(30, 41, 59, 0.6)",
+                border: "1px solid rgba(0, 229, 255, 0.3)",
+                borderRadius: "12px",
+                padding: "12px 14px",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                zIndex: 999,
-                pointerEvents: "none"
+                flexWrap: "wrap",
+                gap: "10px"
               }}>
-                <div style={{
-                  background: "rgba(14, 20, 36, 0.92)",
-                  backdropFilter: "blur(10px)",
-                  padding: "6px 12px",
-                  borderRadius: "10px",
-                  border: "1px solid rgba(255, 255, 255, 0.15)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.4)"
-                }}>
-                  <span style={{ fontFamily: "monospace", fontWeight: "800", color: "#00e5ff", fontSize: "0.82rem" }}>
-                    {activeIncident.id}
-                  </span>
-                  <span style={{ color: "#64748b" }}>•</span>
-                  <span style={{ fontSize: "0.78rem", fontWeight: "700", color: "#f8fafc" }}>
-                    {activeIncident.emergency_type}
-                  </span>
-                </div>
-
-                <div style={{
-                  background: "rgba(14, 20, 36, 0.92)",
-                  backdropFilter: "blur(10px)",
-                  padding: "6px 12px",
-                  borderRadius: "10px",
-                  border: `1px solid ${getServiceColor(activeIncident.suggested_service)}60`,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "5px",
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-                  fontSize: "0.76rem",
-                  fontWeight: "800",
-                  color: getServiceColor(activeIncident.suggested_service)
-                }}>
-                  {getServiceIcon(activeIncident.suggested_service)}
-                  <span>{activeIncident.suggested_service}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Unified Details & Progress Card */}
-            <div style={{
-              background: "rgba(14, 20, 36, 0.95)",
-              backdropFilter: "blur(18px)",
-              borderRadius: "16px",
-              padding: "16px",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "14px"
-            }}>
-              
-              {/* 5-Step Connected Progress Bar */}
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", position: "relative", alignItems: "center" }}>
-                  {/* Connecting Line */}
-                  <div style={{
-                    position: "absolute",
-                    top: "13px",
-                    left: "20px",
-                    right: "20px",
-                    height: "2px",
-                    background: "rgba(255, 255, 255, 0.1)",
-                    zIndex: 0
-                  }} />
-                  
-                  {STATUS_STEPS.map((step, idx) => {
-                    const isDone = idx < currentStepIdx;
-                    const isCurrent = idx === currentStepIdx;
-
-                    return (
-                      <div key={step} style={{ flex: 1, textAlign: "center", position: "relative", zIndex: 1 }}>
-                        <div style={{
-                          width: "26px",
-                          height: "26px",
-                          borderRadius: "50%",
-                          margin: "0 auto 4px auto",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background: isDone ? "#00ff88" : isCurrent ? "#ff334b" : "#1e293b",
-                          color: isDone ? "#070a12" : "white",
-                          fontSize: "10px",
-                          fontWeight: "800",
-                          boxShadow: isCurrent ? "0 0 14px rgba(255, 51, 75, 0.85)" : "none",
-                          transition: "all 0.3s ease"
-                        }}>
-                          {isDone ? <Check size={13} /> : idx + 1}
-                        </div>
-                        <div style={{ fontSize: "0.65rem", fontWeight: isCurrent ? "800" : isDone ? "700" : "500", color: isCurrent ? "#f8fafc" : isDone ? "#00ff88" : "#64748b" }}>
-                          {step}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Responder Information or 5-Min Escalation Alert */}
-              {activeIncident.assigned_responder ? (
-                <div style={{
-                  background: "rgba(30, 41, 59, 0.6)",
-                  border: "1px solid rgba(0, 229, 255, 0.3)",
-                  borderRadius: "12px",
-                  padding: "12px 14px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "10px"
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "rgba(0, 229, 255, 0.18)", color: "#00e5ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Navigation size={20} />
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "rgba(0, 229, 255, 0.18)", color: "#00e5ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Navigation size={20} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.92rem", fontWeight: "900", color: "#f8fafc" }}>
+                      {activeIncident.assigned_responder.full_name}
                     </div>
-                    <div>
-                      <div style={{ fontSize: "0.92rem", fontWeight: "900", color: "#f8fafc" }}>
-                        {activeIncident.assigned_responder.full_name}
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
-                        {activeIncident.assigned_responder.service_type} • Vehicle: <strong>{activeIncident.assigned_responder.vehicle_number || "DEMO-UNIT"}</strong>
-                      </div>
+                    <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                      {activeIncident.assigned_responder.service_type} • Vehicle: <strong>{activeIncident.assigned_responder.vehicle_number || "DEMO-UNIT"}</strong>
                     </div>
                   </div>
-
-                  <a
-                    href={`tel:${activeIncident.assigned_responder.phone || "112"}`}
-                    onClick={() => sounds.playTap()}
-                    style={{
-                      background: "linear-gradient(135deg, #00ff88, #059669)",
-                      color: "#070a12",
-                      padding: "8px 16px",
-                      borderRadius: "8px",
-                      fontSize: "0.82rem",
-                      fontWeight: "900",
-                      textDecoration: "none",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "5px",
-                      boxShadow: "0 4px 14px rgba(0, 255, 136, 0.3)"
-                    }}
-                  >
-                    <Phone size={14} /> Call
-                  </a>
                 </div>
-              ) : (
-                <div style={{
-                  background: "rgba(255, 184, 0, 0.12)",
-                  border: "1px solid rgba(255, 184, 0, 0.35)",
-                  borderRadius: "12px",
-                  padding: "12px 14px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  color: "#ffb800"
-                }}>
-                  <Clock size={20} className="animate-spin" />
-                  <div style={{ fontSize: "0.78rem" }}>
-                    <div style={{ fontWeight: "800", color: "#f8fafc" }}>
-                      Awaiting Responder Acceptance
-                    </div>
-                    <div style={{ color: "#cbd5e1", marginTop: "1px" }}>
-                      5-Minute Escalation Alert broadcasted to nearest 5 {activeIncident.suggested_service} units.
-                    </div>
+
+                <a
+                  href={`tel:${activeIncident.assigned_responder.phone || "112"}`}
+                  onClick={() => sounds.playTap()}
+                  style={{
+                    background: "linear-gradient(135deg, #00ff88, #059669)",
+                    color: "#070a12",
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    fontSize: "0.82rem",
+                    fontWeight: "900",
+                    textDecoration: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    boxShadow: "0 4px 14px rgba(0, 255, 136, 0.3)"
+                  }}
+                >
+                  <Phone size={14} /> Call
+                </a>
+              </div>
+            ) : (
+              <div style={{
+                background: "rgba(255, 184, 0, 0.12)",
+                border: "1px solid rgba(255, 184, 0, 0.35)",
+                borderRadius: "12px",
+                padding: "12px 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                color: "#ffb800"
+              }}>
+                <Clock size={20} className="animate-spin" />
+                <div style={{ fontSize: "0.78rem" }}>
+                  <div style={{ fontWeight: "800", color: "#f8fafc" }}>
+                    Awaiting Responder Acceptance
                   </div>
+                  <div style={{ color: "#cbd5e1", marginTop: "1px" }}>
+                    5-Minute Escalation Alert broadcasted to nearest 5 {activeIncident.suggested_service} units.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Checklist Conditions & Details */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", paddingTop: "4px" }}>
+              {activeIncident.checklist_json && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+                  <span style={{ fontSize: "0.72rem", color: "#94a3b8", fontWeight: "700" }}>Reported Hazards:</span>
+                  {JSON.parse(activeIncident.checklist_json || "[]").map((item) => (
+                    <span key={item} style={{ fontSize: "0.7rem", background: "rgba(255, 51, 75, 0.15)", border: "1px solid rgba(255, 51, 75, 0.3)", color: "#ff4d67", padding: "2px 8px", borderRadius: "6px", fontWeight: "600" }}>
+                      {item}
+                    </span>
+                  ))}
                 </div>
               )}
 
-              {/* Checklist Conditions & Details */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", paddingTop: "4px" }}>
-                {activeIncident.checklist_json && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
-                    <span style={{ fontSize: "0.72rem", color: "#94a3b8", fontWeight: "700" }}>Reported Hazards:</span>
-                    {JSON.parse(activeIncident.checklist_json || "[]").map((item) => (
-                      <span key={item} style={{ fontSize: "0.7rem", background: "rgba(255, 51, 75, 0.15)", border: "1px solid rgba(255, 51, 75, 0.3)", color: "#ff4d67", padding: "2px 8px", borderRadius: "6px", fontWeight: "600" }}>
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                )}
+              {activeIncident.description && (
+                <div style={{ fontSize: "0.78rem", color: "#e2e8f0", background: "rgba(255,255,255,0.04)", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <span style={{ color: "#94a3b8", fontWeight: "700" }}>Description: </span>
+                  {activeIncident.description}
+                </div>
+              )}
 
-                {activeIncident.description && (
-                  <div style={{ fontSize: "0.78rem", color: "#e2e8f0", background: "rgba(255,255,255,0.04)", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <span style={{ color: "#94a3b8", fontWeight: "700" }}>Description: </span>
-                    {activeIncident.description}
-                  </div>
-                )}
-
-                {activeIncident.address && (
-                  <div style={{ fontSize: "0.72rem", color: "#94a3b8", display: "flex", alignItems: "center", gap: "5px" }}>
-                    <MapPin size={13} color="#00e5ff" />
-                    <span>{activeIncident.address}</span>
-                  </div>
-                )}
-              </div>
-
+              {activeIncident.address && (
+                <div style={{ fontSize: "0.72rem", color: "#94a3b8", display: "flex", alignItems: "center", gap: "5px" }}>
+                  <MapPin size={13} color="#00e5ff" />
+                  <span>{activeIncident.address}</span>
+                </div>
+              )}
             </div>
 
           </div>
-        ) : (
-          <div style={{
-            background: "rgba(14, 20, 36, 0.95)",
-            borderRadius: "16px",
-            padding: "40px 20px",
-            textAlign: "center",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            margin: "auto 0"
-          }}>
-            <CheckCircle2 size={40} color="#00ff88" style={{ margin: "0 auto 10px auto" }} />
-            <h3 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#f8fafc", marginBottom: "4px" }}>
-              No Active Emergencies
-            </h3>
-            <p style={{ fontSize: "0.82rem", color: "#94a3b8", maxWidth: "340px", margin: "0 auto 16px auto" }}>
-              Press the button below if emergency help or rescue is needed.
-            </p>
-            <button
-              onClick={() => { sounds.playAlertSiren(); onOpenSos(); }}
-              className="btn-emergency-main"
-              style={{ padding: "10px 24px", fontSize: "0.9rem" }}
-            >
-              <AlertOctagon size={16} /> Report Emergency SOS
-            </button>
-          </div>
-        )}
 
-      </div>
+        </div>
+      )}
 
     </div>
   );
