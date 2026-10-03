@@ -1,0 +1,30 @@
+{
+  "name": "hyperlocal-emergency-desktop",
+  "version": "1.0.0",
+  "description": "Hyperlocal Emergency Response Platform - Standalone Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --x64"
+  },
+  "author": "Emergency Response Team",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^35.0.0"
+  },
+  "build": {
+    "appId": "com.emergency.hyperlocal.desktop",
+    "productName": "Emergency112 Response Desktop",
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "main.js",
+      "../frontend/dist/**/*"
+    ]
+  }
+}
