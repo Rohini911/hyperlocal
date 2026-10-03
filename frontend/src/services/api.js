@@ -156,6 +156,7 @@ export const authApi = {
       if (res.data.token) {
         localStorage.setItem("emergency_token", res.data.token);
         localStorage.setItem("emergency_user", JSON.stringify(res.data.user));
+        localStorage.setItem("aegis_user", JSON.stringify(res.data.user));
       }
       return res.data;
     } catch (err) {
@@ -164,7 +165,7 @@ export const authApi = {
       let user = null;
       try {
         const registered = JSON.parse(localStorage.getItem("registered_users") || "[]");
-        user = registered.find(u => u.email.toLowerCase() === normalizedEmail);
+        user = registered.find(u => u.email && u.email.toLowerCase() === normalizedEmail);
       } catch (e) {}
 
       if (!user) {
@@ -175,6 +176,7 @@ export const authApi = {
         const dummyToken = "jwt_offline_token_" + Date.now();
         localStorage.setItem("emergency_token", dummyToken);
         localStorage.setItem("emergency_user", JSON.stringify(user));
+        localStorage.setItem("aegis_user", JSON.stringify(user));
         return { success: true, token: dummyToken, user };
       }
 
@@ -189,6 +191,7 @@ export const authApi = {
         const dummyToken = "jwt_offline_token_" + Date.now();
         localStorage.setItem("emergency_token", dummyToken);
         localStorage.setItem("emergency_user", JSON.stringify(autoUser));
+        localStorage.setItem("aegis_user", JSON.stringify(autoUser));
         return { success: true, token: dummyToken, user: autoUser };
       }
 
@@ -202,14 +205,15 @@ export const authApi = {
       if (res.data.token) {
         localStorage.setItem("emergency_token", res.data.token);
         localStorage.setItem("emergency_user", JSON.stringify(res.data.user));
+        localStorage.setItem("aegis_user", JSON.stringify(res.data.user));
       }
       return res.data;
     } catch (err) {
       const newUser = {
         id: Date.now(),
-        full_name: userData.full_name,
+        full_name: userData.full_name || "Registered Citizen",
         email: userData.email,
-        phone: userData.phone,
+        phone: userData.phone || "+91 98765 00000",
         role: "citizen"
       };
       try {
@@ -221,6 +225,7 @@ export const authApi = {
       const dummyToken = "jwt_offline_token_" + Date.now();
       localStorage.setItem("emergency_token", dummyToken);
       localStorage.setItem("emergency_user", JSON.stringify(newUser));
+      localStorage.setItem("aegis_user", JSON.stringify(newUser));
       return { success: true, token: dummyToken, user: newUser };
     }
   },
@@ -238,6 +243,7 @@ export const authApi = {
   logout: () => {
     localStorage.removeItem("emergency_token");
     localStorage.removeItem("emergency_user");
+    localStorage.removeItem("aegis_user");
   }
 };
 
