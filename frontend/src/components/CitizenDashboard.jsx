@@ -409,54 +409,6 @@ export default function CitizenDashboard({ currentUser, onOpenSos, onLogout, ini
         </div>
       )}
 
-      {/* Emergency Helpline Quick-Dials */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px", marginTop: "6px" }}>
-        <a 
-          href="tel:108"
-          onClick={() => sounds.playTap()}
-          style={{ textDecoration: "none", background: "rgba(0, 255, 136, 0.08)", border: "1px solid rgba(0, 255, 136, 0.25)", borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#f8fafc" }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <HeartPulse size={18} color="#00ff88" />
-            <div>
-              <div style={{ fontSize: "0.8rem", fontWeight: "700" }}>Ambulance</div>
-              <div style={{ fontSize: "0.72rem", color: "#00ff88", fontWeight: "800" }}>Dial 108</div>
-            </div>
-          </div>
-          <PhoneCall size={15} color="#00ff88" />
-        </a>
-
-        <a 
-          href="tel:100"
-          onClick={() => sounds.playTap()}
-          style={{ textDecoration: "none", background: "rgba(0, 229, 255, 0.08)", border: "1px solid rgba(0, 229, 255, 0.25)", borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#f8fafc" }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <ShieldAlert size={18} color="#00e5ff" />
-            <div>
-              <div style={{ fontSize: "0.8rem", fontWeight: "700" }}>Police Control</div>
-              <div style={{ fontSize: "0.72rem", color: "#00e5ff", fontWeight: "800" }}>Dial 100 / 112</div>
-            </div>
-          </div>
-          <PhoneCall size={15} color="#00e5ff" />
-        </a>
-
-        <a 
-          href="tel:101"
-          onClick={() => sounds.playTap()}
-          style={{ textDecoration: "none", background: "rgba(255, 51, 75, 0.08)", border: "1px solid rgba(255, 51, 75, 0.25)", borderRadius: "10px", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", color: "#f8fafc" }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Flame size={18} color="#ff334b" />
-            <div>
-              <div style={{ fontSize: "0.8rem", fontWeight: "700" }}>Fire Rescue</div>
-              <div style={{ fontSize: "0.72rem", color: "#ff334b", fontWeight: "800" }}>Dial 101</div>
-            </div>
-          </div>
-          <PhoneCall size={15} color="#ff334b" />
-        </a>
-      </div>
-
     </div>
   );
 }
