@@ -766,6 +766,8 @@ io.on('connection', (socket) => {
 });
 
 // ================= DATABASE DEDUPLICATION ROUTINE =================
+async function cleanDatabaseDuplicates() {
+  try {
     // 1. Remove static demo incidents (INC-2026-1049, INC-2026-1032, etc.)
     await dbRun(`
       DELETE FROM incidents 
