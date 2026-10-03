@@ -38,59 +38,8 @@ export default function LandingPage({
       padding: "24px 16px"
     }}>
       
-      {/* Top Navbar */}
-      <header style={{
-        maxWidth: "1200px",
-        margin: "0 auto",
-        width: "100%",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingBottom: "16px",
-        borderBottom: "1px solid rgba(255,255,255,0.1)",
-        flexWrap: "wrap",
-        gap: "12px"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: "#ff334b", display: "flex", alignItems: "center", justifyContent: "center", color: "white", boxShadow: "0 0 20px rgba(255,51,75,0.65)" }}>
-            <Shield size={24} />
-          </div>
-          <div>
-            <div style={{ fontSize: "1.18rem", fontWeight: "900", color: "#f8fafc", letterSpacing: "-0.01em" }}>
-              Hyperlocal Emergency Platform
-            </div>
-            <div style={{ fontSize: "0.74rem", color: "#00e5ff", fontWeight: "600", display: "flex", alignItems: "center", gap: "5px" }}>
-              <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#00ff88", display: "inline-block", boxShadow: "0 0 8px #00ff88" }}></span>
-              Direct First Responder Dispatch System
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {/* Audio FX Toggle */}
-          <button
-            onClick={handleToggleAudio}
-            className="btn-outline"
-            style={{ padding: "8px 12px", fontSize: "0.82rem", color: isMuted ? "#94a3b8" : "#00ff88", borderColor: isMuted ? "rgba(255,255,255,0.1)" : "rgba(0,255,136,0.3)" }}
-            title={isMuted ? "Audio Muted - Click to Unmute" : "Audio Active - Click to Mute"}
-          >
-            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-            <span style={{ marginLeft: "4px" }}>{isMuted ? "Muted" : "SFX"}</span>
-          </button>
-
-          {/* Big Top SOS Button */}
-          <button
-            onClick={handleSos}
-            className="btn-emergency-main"
-            style={{ padding: "10px 24px", borderRadius: "24px", fontSize: "0.95rem" }}
-          >
-            <AlertOctagon size={18} /> SOS EMERGENCY
-          </button>
-        </div>
-      </header>
-
       {/* Main Hero & Portals */}
-      <main style={{ maxWidth: "1100px", margin: "40px auto", width: "100%", textAlign: "center" }}>
+      <main style={{ maxWidth: "1100px", margin: "20px auto 40px auto", width: "100%", textAlign: "center" }}>
         
         {/* Headline */}
         <div style={{ marginBottom: "36px" }}>
