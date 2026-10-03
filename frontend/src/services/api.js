@@ -52,20 +52,26 @@ const PRESET_USERS = {
 export const deduplicateIncidents = (list) => {
   if (!Array.isArray(list)) return [];
   const seenIds = new Set();
-  const seenSignatures = new Set();
+  const seenNearby = [];
   const result = [];
 
   for (const item of list) {
     if (!item) continue;
-    const id = item.id || item._id;
+    const id = (item.id || item._id || "").toString();
     if (!id || seenIds.has(id)) continue;
 
-    // Signature based on type, location, and approximate time to catch rapid accidental multi-submissions
-    const signature = `${item.emergency_type || ""}_${item.lat || ""}_${item.lng || ""}_${item.description || ""}`;
-    if (seenSignatures.has(signature)) continue;
+    // Filter duplicate if same type and coordinates within ~80 meters
+    const isNearbyDup = seenNearby.some(prev => {
+      const latDiff = Math.abs((Number(prev.lat) || 0) - (Number(item.lat) || 0));
+      const lngDiff = Math.abs((Number(prev.lng) || 0) - (Number(item.lng) || 0));
+      const sameType = prev.emergency_type === item.emergency_type;
+      return sameType && latDiff < 0.0008 && lngDiff < 0.0008;
+    });
+
+    if (isNearbyDup) continue;
 
     seenIds.add(id);
-    seenSignatures.add(signature);
+    seenNearby.push(item);
     result.push(item);
   }
   return result;
@@ -233,7 +239,13 @@ export const incidentApi = {
   create: async (incidentData) => {
     try {
       const res = await api.post("/incidents", incidentData);
-      return { success: true, data: res.data.incident, incident: res.data.incident };
+      const inc = res.data.incident || res.data;
+      if (inc) {
+        const incidents = getStoredIncidents();
+        const updated = deduplicateIncidents([inc, ...incidents]);
+        setStoredIncidents(updated);
+      }
+      return { success: true, data: inc, incident: inc };
     } catch (err) {
       const incidents = getStoredIncidents();
       const newInc = {
@@ -249,7 +261,7 @@ export const incidentApi = {
         status: "Reported",
         created_at: new Date().toISOString()
       };
-      const updated = [newInc, ...incidents];
+      const updated = deduplicateIncidents([newInc, ...incidents]);
       setStoredIncidents(updated);
       return { success: true, data: newInc, incident: newInc };
     }
